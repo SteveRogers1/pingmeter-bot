@@ -11,7 +11,7 @@ try:
 except Exception:
     HAVE_REACTIONS = False
 
-from app.db import Database
+from db import Database
 
 
 router = Router()
