@@ -1,5 +1,6 @@
 import os
 import asyncpg
+import datetime
 from typing import Optional, List, Tuple
 
 class Database:
@@ -39,7 +40,7 @@ class Database:
             """)
 
     async def upsert_user(self, user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]):
-        now = int(asyncpg.types.datetime.datetime.utcnow().timestamp())
+        now = int(datetime.datetime.utcnow().timestamp())
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -168,6 +169,19 @@ class Database:
             if row and row[0] is not None:
                 return float(row[0]), int(row[1])
             return None
+
+    async def get_unanswered_pings(self, chat_id: int, timeout_sec: int = 600) -> List[Tuple[int, int, int, int]]:
+        now = int(datetime.datetime.utcnow().timestamp())
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, target_user_id, ping_ts, source_user_id
+                FROM pings
+                WHERE chat_id=$1 AND closed_ts IS NULL AND $2 - ping_ts > $3
+                """,
+                chat_id, now, timeout_sec
+            )
+            return [(r[0], r[1], r[2], r[3]) for r in rows]
 
     async def close(self):
         if self.pool is not None:

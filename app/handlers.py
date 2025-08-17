@@ -133,6 +133,21 @@ async def cmd_unanswered(message: Message) -> None:
     await message.reply("\n".join(lines))
 
 
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.reply(
+        """
+<b>Доступные команды:</b>
+/start — приветствие и краткая инструкция
+/top — топ по среднему времени ответа
+/me — ваша личная статистика
+/unanswered — кто читает и не отвечает более 10 минут
+/help — список всех команд
+""",
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text | F.caption)
 async def on_message(message: Message) -> None:
     bot = message.bot
