@@ -5,6 +5,7 @@ from typing import Optional, List, Tuple
 class Database:
     def __init__(self, dsn: Optional[str] = None):
         self._dsn = dsn or os.getenv("DATABASE_URL")
+        print("DATABASE_URL:", self._dsn)  # DEBUG: print DSN for troubleshooting
         self.pool: Optional[asyncpg.Pool] = None
         if not self._dsn:
             raise RuntimeError("DATABASE_URL not set")

@@ -33,8 +33,7 @@ async def run() -> None:
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in environment")
 
-    db_path = os.getenv("DB_PATH", "data.sqlite3")
-    db = Database(db_path)
+    db = Database()  # Не передаём db_path, пусть берёт из DATABASE_URL
 
     async with app_lifespan(db):
         bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
