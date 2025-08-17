@@ -115,24 +115,6 @@ async def cmd_me(message: Message) -> None:
     await message.reply(f"Ваше среднее время ответа: {format_duration(avg_sec)} за всё время (n={cnt}).")
 
 
-@router.message(Command("unanswered"))
-async def cmd_unanswered(message: Message) -> None:
-    import datetime
-    bot = message.bot
-    db: Database = getattr(bot, "db")
-    chat_id = message.chat.id
-    rows = await db.get_unanswered_pings(chat_id=chat_id, timeout_sec=600)
-    if not rows:
-        await message.reply("Нет пользователей, которые читают и не отвечают более 10 минут.")
-        return
-    now = int(datetime.datetime.utcnow().timestamp())
-    lines = ["Пользователи, которые читают и не отвечают более 10 минут:"]
-    for ping_id, user_id, ping_ts, source_user_id in rows:
-        wait_sec = now - ping_ts
-        lines.append(f"<a href=\"tg://user?id={user_id}\">{user_id}</a> — {format_duration(wait_sec)} не отвечает (от <a href=\"tg://user?id={source_user_id}\">{source_user_id}</a>)")
-    await message.reply("\n".join(lines))
-
-
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.reply(
@@ -141,7 +123,6 @@ async def cmd_help(message: Message) -> None:
 /start — приветствие и краткая инструкция
 /top — топ по среднему времени ответа
 /me — ваша личная статистика
-/unanswered — кто читает и не отвечает более 10 минут
 /help — список всех команд
 """,
         parse_mode="HTML"
@@ -216,7 +197,7 @@ async def on_message(message: Message) -> None:
             chat_id=message.chat.id,
             target_user_id=message.from_user.id,
             close_message_id=message.message_id,
-            close_ts=int(message.date.timestamp()),
+            close_ts=int(dt.datetime.utcnow().timestamp()),
         )
 
 
