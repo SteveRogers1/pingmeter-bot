@@ -8,7 +8,7 @@
 2. Создайте виртуальное окружение и установите зависимости:
    ```bash
    .\.venv\Scripts\python -m pip install -U pip
-   .\.venv\Scripts\python -m pip install aiogram aiosqlite python-dotenv
+   .\.venv\Scripts\python -m pip install aiogram python-dotenv
    ```
 3. Создайте `.env` по образцу `.env.example` и задайте `BOT_TOKEN`.
 4. Старт:
