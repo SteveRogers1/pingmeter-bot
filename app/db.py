@@ -168,4 +168,8 @@ class Database:
                 return float(row[0]), int(row[1])
             return None
 
+    async def close(self):
+        if self.pool is not None:
+            await self.pool.close()
+
 
