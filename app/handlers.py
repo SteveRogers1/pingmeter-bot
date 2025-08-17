@@ -11,7 +11,7 @@ try:
 except Exception:
     HAVE_REACTIONS = False
 
-from db import Database
+from app.db import Database
 
 
 router = Router()
@@ -27,6 +27,20 @@ def _display_name(user) -> str:
     return name
 
 
+def format_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds} сек"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes} мин {sec} сек"
+    hours, min_ = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours} ч {min_} мин"
+    days, hr = divmod(hours, 24)
+    return f"{days} д {hr} ч"
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     await message.reply(
@@ -39,12 +53,15 @@ async def cmd_top(message: Message) -> None:
     bot = message.bot
     db: Database = getattr(bot, "db")
     chat_id = message.chat.id
-    since_ts = None
-    rows = await db.get_top(chat_id=chat_id, since_ts=since_ts, limit=10)
+    text = message.text or ""
+    limit = 10
+    if "all" in text.lower():
+        limit = 1000  # условно "все", можно ограничить разумным числом
+    rows = await db.get_top(chat_id=chat_id, since_ts=None, limit=limit)
     if not rows:
         await message.reply("Пока нет данных для топа.")
         return
-    lines = ["Топ по среднему времени ответа за всё время:"]
+    lines = [f"Топ по среднему времени ответа за всё время ({'все' if limit > 10 else 'топ 10'}):"]
     for idx, (user_id, avg_sec, cnt, username, first_name, last_name) in enumerate(rows, start=1):
         name_parts: List[str] = []
         if first_name:
@@ -52,8 +69,35 @@ async def cmd_top(message: Message) -> None:
         if last_name:
             name_parts.append(last_name)
         text = " ".join(name_parts) if name_parts else (f"@{username}" if username else str(user_id))
-        lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {int(avg_sec)} сек (n={cnt})")
-    await message.reply("\n".join(lines))
+        lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt})")
+    reply_markup = None
+    if limit == 10 and len(rows) >= 10:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        reply_markup = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Топ all", callback_data="top_all")]]
+        )
+    await message.reply("\n".join(lines), reply_markup=reply_markup)
+
+
+@router.callback_query(lambda c: c.data == "top_all")
+async def on_top_all(callback_query):
+    bot = callback_query.bot
+    db: Database = getattr(bot, "db")
+    chat_id = callback_query.message.chat.id
+    rows = await db.get_top(chat_id=chat_id, since_ts=None, limit=1000)
+    if not rows:
+        await callback_query.message.edit_text("Пока нет данных для топа.")
+        return
+    lines = ["Топ по среднему времени ответа за всё время (все):"]
+    for idx, (user_id, avg_sec, cnt, username, first_name, last_name) in enumerate(rows, start=1):
+        name_parts: List[str] = []
+        if first_name:
+            name_parts.append(first_name)
+        if last_name:
+            name_parts.append(last_name)
+        text = " ".join(name_parts) if name_parts else (f"@{username}" if username else str(user_id))
+        lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt})")
+    await callback_query.message.edit_text("\n".join(lines))
 
 
 @router.message(Command("me"))
@@ -68,7 +112,7 @@ async def cmd_me(message: Message) -> None:
         await message.reply("Нет закрытых пингов по вам за всё время.")
         return
     avg_sec, cnt = stats
-    await message.reply(f"Ваше среднее время ответа: {int(avg_sec)} сек за всё время (n={cnt}).")
+    await message.reply(f"Ваше среднее время ответа: {format_duration(avg_sec)} за всё время (n={cnt}).")
 
 
 @router.message(F.text | F.caption)
