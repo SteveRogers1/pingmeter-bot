@@ -53,23 +53,42 @@ async def cmd_top(message: Message) -> None:
     bot = message.bot
     db: Database = getattr(bot, "db")
     chat_id = message.chat.id
+    bot_id = getattr(bot, "bot_id", None)
     text = message.text or ""
     limit = 10
     if "all" in text.lower():
-        limit = 1000  # условно "все", можно ограничить разумным числом
+        limit = 1000
     rows = await db.get_top(chat_id=chat_id, since_ts=None, limit=limit)
-    if not rows:
+    # Получаем открытые пинги для всех пользователей
+    open_pings = await db.get_open_pings(chat_id=chat_id)
+    open_pings_map = {user_id: ping_ts for user_id, ping_ts in open_pings}
+    now = int(dt.datetime.utcnow().timestamp())
+    if not rows and not open_pings:
         await message.reply("Пока нет данных для топа.")
         return
     lines = [f"Топ по среднему времени ответа за всё время ({'все' if limit > 10 else 'топ 10'}):"]
     for idx, (user_id, avg_sec, cnt, username, first_name, last_name) in enumerate(rows, start=1):
+        if bot_id and user_id == bot_id:
+            continue  # Не показываем бота в топе
         name_parts: List[str] = []
         if first_name:
             name_parts.append(first_name)
         if last_name:
             name_parts.append(last_name)
         text = " ".join(name_parts) if name_parts else (f"@{username}" if username else str(user_id))
-        lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt})")
+        open_timer = ""
+        if user_id in open_pings_map:
+            wait_sec = now - open_pings_map[user_id]
+            open_timer = f" | ⏳ {format_duration(wait_sec)} ждём ответа"
+        lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt}){open_timer}")
+    # Добавить пользователей с открытыми пингами, которых нет в rows
+    for user_id, ping_ts in open_pings_map.items():
+        if any(user_id == r[0] for r in rows):
+            continue
+        if bot_id and user_id == bot_id:
+            continue
+        wait_sec = now - ping_ts
+        lines.append(f"— <a href=\"tg://user?id={user_id}\">{user_id}</a> — ⏳ {format_duration(wait_sec)} ждём ответа")
     reply_markup = None
     if limit == 10 and len(rows) >= 10:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -133,8 +152,9 @@ async def cmd_help(message: Message) -> None:
 async def on_message(message: Message) -> None:
     bot = message.bot
     db: Database = getattr(bot, "db")
+    bot_id = getattr(bot, "bot_id", None)
 
-    if message.from_user and not message.from_user.is_bot:
+    if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
         await db.upsert_user(
             user_id=message.from_user.id,
             username=message.from_user.username,
@@ -147,6 +167,7 @@ async def on_message(message: Message) -> None:
         message.reply_to_message
         and message.reply_to_message.from_user
         and not message.reply_to_message.from_user.is_bot
+        and (not bot_id or message.reply_to_message.from_user.id != bot_id)
     ):
         target = message.reply_to_message.from_user
         if target.id != message.from_user.id:
@@ -167,6 +188,7 @@ async def on_message(message: Message) -> None:
             ent.type == "text_mention"
             and ent.user
             and not ent.user.is_bot
+            and (not bot_id or ent.user.id != bot_id)
             and ent.user.id != message.from_user.id
         ):
             await db.record_ping(
@@ -181,7 +203,7 @@ async def on_message(message: Message) -> None:
             mention_text = text[ent.offset : ent.offset + ent.length]
             username = mention_text.lstrip("@")
             user_id = await db.resolve_username(username)
-            if user_id and user_id != message.from_user.id:
+            if user_id and user_id != message.from_user.id and (not bot_id or user_id != bot_id):
                 await db.record_ping(
                     chat_id=message.chat.id,
                     source_message_id=message.message_id,
@@ -192,7 +214,7 @@ async def on_message(message: Message) -> None:
                 )
 
     # Close the oldest open ping for this author (if any)
-    if message.from_user and not message.from_user.is_bot:
+    if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
         await db.close_oldest_open_ping_by_message(
             chat_id=message.chat.id,
             target_user_id=message.from_user.id,

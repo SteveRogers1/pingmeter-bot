@@ -37,12 +37,11 @@ async def run() -> None:
 
     async with app_lifespan(db):
         bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        # Share db via bot context
         setattr(bot, "db", db)
-
+        me = await bot.get_me()
+        setattr(bot, "bot_id", me.id)
         dp = Dispatcher()
         dp.include_router(router)
-
         await dp.start_polling(bot)
 
 
