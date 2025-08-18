@@ -201,16 +201,16 @@ class Database:
                 return float(row[0]), int(row[1])
             return None
 
-    async def get_open_pings(self, chat_id: int) -> List[Tuple[int, int]]:
+    async def get_open_pings(self, chat_id: int) -> List[Tuple[int, int, int]]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT target_user_id, ping_ts FROM pings
+                SELECT target_user_id, ping_ts, source_message_id FROM pings
                 WHERE chat_id=$1 AND closed_ts IS NULL
                 """,
                 chat_id
             )
-            return [(r[0], r[1]) for r in rows]
+            return [(r[0], r[1], r[2] if r[2] is not None else None) for r in rows]
 
     async def close(self):
         if self.pool is not None:

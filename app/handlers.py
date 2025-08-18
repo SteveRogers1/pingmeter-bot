@@ -80,7 +80,10 @@ async def cmd_top(message: Message) -> None:
         if user_id in open_pings_map:
             ping_ts, source_message_id = open_pings_map[user_id]
             wait_sec = now - ping_ts
-            open_timer = f" | ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>"
+            if source_message_id:
+                open_timer = f" | ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>"
+            else:
+                open_timer = f" | ⏳ {format_duration(wait_sec)} ждём ответа"
         lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt}){open_timer}")
     # Добавить пользователей с открытыми пингами, которых нет в rows
     for user_id, (ping_ts, source_message_id) in open_pings_map.items():
@@ -89,7 +92,10 @@ async def cmd_top(message: Message) -> None:
         if bot_id and user_id == bot_id:
             continue
         wait_sec = now - ping_ts
-        lines.append(f"— <a href=\"tg://user?id={user_id}\">{user_id}</a> — ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>")
+        if source_message_id:
+            lines.append(f"— <a href=\"tg://user?id={user_id}\">{user_id}</a> — ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>")
+        else:
+            lines.append(f"— <a href=\"tg://user?id={user_id}\">{user_id}</a> — ⏳ {format_duration(wait_sec)} ждём ответа")
     reply_markup = None
     if limit == 10 and len(rows) >= 10:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
