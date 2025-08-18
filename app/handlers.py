@@ -200,11 +200,26 @@ async def on_message(message: Message) -> None:
             username = mention_text.lstrip("@")
             user_id = await db.resolve_username(username)
             logging.info(f"mention_text: {mention_text}, username: {username}, resolved user_id: {user_id}")
+            if not user_id:
+                # Попробовать получить user_id через get_chat_member
+                try:
+                    member = await bot.get_chat_member(message.chat.id, username)
+                    user_id = member.user.id
+                    # Добавить пользователя в базу
+                    await db.upsert_user(
+                        user_id=user_id,
+                        username=member.user.username,
+                        first_name=member.user.first_name,
+                        last_name=member.user.last_name,
+                    )
+                    logging.info(f"user_id найден через get_chat_member: {user_id}")
+                except Exception as e:
+                    logging.warning(f"Не удалось найти user_id для @{username}: {e}")
             if user_id and user_id != message.from_user.id and (not bot_id or user_id != bot_id):
                 logging.info(f"Создаём пинг: mention для user_id={user_id}")
                 await db.record_ping(
                     chat_id=message.chat.id,
-                    source_message_id=message.message_id,  # ссылка на исходное сообщение
+                    source_message_id=message.message_id,
                     source_user_id=message.from_user.id,
                     target_user_id=user_id,
                     ping_reason="mention",
