@@ -159,9 +159,15 @@ async def cmd_help(message: Message) -> None:
 
 @router.message(F.text | F.caption)
 async def on_message(message: Message) -> None:
+    import json
     bot = message.bot
     db: Database = getattr(bot, "db")
     bot_id = getattr(bot, "bot_id", None)
+    # Логируем все entities для отладки
+    entities = message.entities or []
+    text = message.text or message.caption or ""
+    import logging
+    logging.info(f"entities: {json.dumps([ent.as_json() for ent in entities], ensure_ascii=False)} | text: {text}")
 
     if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
         await db.upsert_user(
@@ -172,8 +178,6 @@ async def on_message(message: Message) -> None:
         )
 
     # Create pings only by mentions (только явные теги через @username или text_mention)
-    entities = message.entities or []
-    text = message.text or message.caption or ""
     for ent in entities:
         if (
             ent.type == "text_mention"
@@ -195,6 +199,7 @@ async def on_message(message: Message) -> None:
             mention_text = text[ent.offset : ent.offset + ent.length]
             username = mention_text.lstrip("@")
             user_id = await db.resolve_username(username)
+            logging.info(f"mention_text: {mention_text}, username: {username}, resolved user_id: {user_id}")
             if user_id and user_id != message.from_user.id and (not bot_id or user_id != bot_id):
                 logging.info(f"Создаём пинг: mention для user_id={user_id}")
                 await db.record_ping(
