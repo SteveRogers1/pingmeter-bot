@@ -246,3 +246,25 @@ if HAVE_REACTIONS:
         )
 
 
+@router.message(Command("debug_open_pings"))
+async def cmd_debug_open_pings(message: Message) -> None:
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    chat_id = message.chat.id
+    open_pings = await db.get_open_pings(chat_id=chat_id)
+    if not open_pings:
+        await message.reply("Нет открытых пингов.")
+        return
+    now = int(dt.datetime.utcnow().timestamp())
+    lines = ["<b>Открытые пинги:</b>"]
+    for user_id, ping_ts, source_message_id in open_pings:
+        user = await bot.get_chat_member(chat_id, user_id)
+        username = user.user.username or user.user.first_name or str(user_id)
+        wait_sec = now - ping_ts
+        if source_message_id:
+            lines.append(f"<a href=\"tg://user?id={user_id}\">{username}</a> — ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>")
+        else:
+            lines.append(f"<a href=\"tg://user?id={user_id}\">{username}</a> — ⏳ {format_duration(wait_sec)} ждём ответа")
+    await message.reply("\n".join(lines), parse_mode="HTML")
+
+
