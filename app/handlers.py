@@ -1,5 +1,6 @@
 import datetime as dt
 from typing import Optional, List
+import logging
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -59,17 +60,18 @@ async def cmd_top(message: Message) -> None:
     if "all" in text.lower():
         limit = 1000
     rows = await db.get_top(chat_id=chat_id, since_ts=None, limit=limit)
-    # Получаем открытые пинги для всех пользователей
     open_pings = await db.get_open_pings(chat_id=chat_id)
-    open_pings_map = {user_id: (ping_ts, source_message_id) for user_id, ping_ts, source_message_id in open_pings}
+    open_pings_map = {int(user_id): (ping_ts, source_message_id) for user_id, ping_ts, source_message_id in open_pings}
     now = int(dt.datetime.utcnow().timestamp())
+    logging.info(f"open_pings_map: {open_pings_map}")
     if not rows and not open_pings:
         await message.reply("Пока нет данных для топа.")
         return
     lines = [f"Топ по среднему времени ответа за всё время ({'все' if limit > 10 else 'топ 10'}):"]
     for idx, (user_id, avg_sec, cnt, username, first_name, last_name) in enumerate(rows, start=1):
+        user_id = int(user_id)
         if bot_id and user_id == bot_id:
-            continue  # Не показываем бота в топе
+            continue
         name_parts: List[str] = []
         if first_name:
             name_parts.append(first_name)
@@ -87,7 +89,7 @@ async def cmd_top(message: Message) -> None:
         lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt}){open_timer}")
     # Добавить пользователей с открытыми пингами, которых нет в rows
     for user_id, (ping_ts, source_message_id) in open_pings_map.items():
-        if any(user_id == r[0] for r in rows):
+        if any(int(user_id) == int(r[0]) for r in rows):
             continue
         if bot_id and user_id == bot_id:
             continue
@@ -180,6 +182,7 @@ async def on_message(message: Message) -> None:
             and (not bot_id or ent.user.id != bot_id)
             and ent.user.id != message.from_user.id
         ):
+            logging.info(f"Создаём пинг: text_mention для user_id={ent.user.id}")
             await db.record_ping(
                 chat_id=message.chat.id,
                 source_message_id=message.message_id,  # ссылка на исходное сообщение
@@ -193,6 +196,7 @@ async def on_message(message: Message) -> None:
             username = mention_text.lstrip("@")
             user_id = await db.resolve_username(username)
             if user_id and user_id != message.from_user.id and (not bot_id or user_id != bot_id):
+                logging.info(f"Создаём пинг: mention для user_id={user_id}")
                 await db.record_ping(
                     chat_id=message.chat.id,
                     source_message_id=message.message_id,  # ссылка на исходное сообщение
