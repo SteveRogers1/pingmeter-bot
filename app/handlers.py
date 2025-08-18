@@ -61,7 +61,7 @@ async def cmd_top(message: Message) -> None:
     rows = await db.get_top(chat_id=chat_id, since_ts=None, limit=limit)
     # Получаем открытые пинги для всех пользователей
     open_pings = await db.get_open_pings(chat_id=chat_id)
-    open_pings_map = {user_id: ping_ts for user_id, ping_ts in open_pings}
+    open_pings_map = {user_id: (ping_ts, source_message_id) for user_id, ping_ts, source_message_id in open_pings}
     now = int(dt.datetime.utcnow().timestamp())
     if not rows and not open_pings:
         await message.reply("Пока нет данных для топа.")
@@ -78,17 +78,18 @@ async def cmd_top(message: Message) -> None:
         text = " ".join(name_parts) if name_parts else (f"@{username}" if username else str(user_id))
         open_timer = ""
         if user_id in open_pings_map:
-            wait_sec = now - open_pings_map[user_id]
-            open_timer = f" | ⏳ {format_duration(wait_sec)} ждём ответа"
+            ping_ts, source_message_id = open_pings_map[user_id]
+            wait_sec = now - ping_ts
+            open_timer = f" | ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>"
         lines.append(f"{idx}. <a href=\"tg://user?id={user_id}\">{text}</a> — {format_duration(avg_sec)} (n={cnt}){open_timer}")
     # Добавить пользователей с открытыми пингами, которых нет в rows
-    for user_id, ping_ts in open_pings_map.items():
+    for user_id, (ping_ts, source_message_id) in open_pings_map.items():
         if any(user_id == r[0] for r in rows):
             continue
         if bot_id and user_id == bot_id:
             continue
         wait_sec = now - ping_ts
-        lines.append(f"— <a href=\"tg://user?id={user_id}\">{user_id}</a> — ⏳ {format_duration(wait_sec)} ждём ответа")
+        lines.append(f"— <a href=\"tg://user?id={user_id}\">{user_id}</a> — ⏳ {format_duration(wait_sec)} ждём <a href=\"https://t.me/c/{str(chat_id)[4:]}/{source_message_id}\">ответа</a>")
     reply_markup = None
     if limit == 10 and len(rows) >= 10:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -162,25 +163,7 @@ async def on_message(message: Message) -> None:
             last_name=message.from_user.last_name,
         )
 
-    # Create pings by reply
-    if (
-        message.reply_to_message
-        and message.reply_to_message.from_user
-        and not message.reply_to_message.from_user.is_bot
-        and (not bot_id or message.reply_to_message.from_user.id != bot_id)
-    ):
-        target = message.reply_to_message.from_user
-        if target.id != message.from_user.id:
-            await db.record_ping(
-                chat_id=message.chat.id,
-                source_message_id=message.message_id,
-                source_user_id=message.from_user.id,
-                target_user_id=target.id,
-                ping_reason="reply",
-                ping_ts=int(message.date.timestamp()),
-            )
-
-    # Create pings by mentions
+    # Create pings only by mentions (только явные теги через @username или text_mention)
     entities = message.entities or []
     text = message.text or message.caption or ""
     for ent in entities:
@@ -193,7 +176,7 @@ async def on_message(message: Message) -> None:
         ):
             await db.record_ping(
                 chat_id=message.chat.id,
-                source_message_id=message.message_id,
+                source_message_id=message.message_id,  # ссылка на исходное сообщение
                 source_user_id=message.from_user.id,
                 target_user_id=ent.user.id,
                 ping_reason="mention",
@@ -206,7 +189,7 @@ async def on_message(message: Message) -> None:
             if user_id and user_id != message.from_user.id and (not bot_id or user_id != bot_id):
                 await db.record_ping(
                     chat_id=message.chat.id,
-                    source_message_id=message.message_id,
+                    source_message_id=message.message_id,  # ссылка на исходное сообщение
                     source_user_id=message.from_user.id,
                     target_user_id=user_id,
                     ping_reason="mention",
