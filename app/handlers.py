@@ -167,7 +167,7 @@ async def on_message(message: Message) -> None:
     entities = message.entities or []
     text = message.text or message.caption or ""
     import logging
-    logging.info(f"entities: {json.dumps([ent.as_json() for ent in entities], ensure_ascii=False)} | text: {text}")
+    logging.info(f"entities: {[ent.__dict__ for ent in entities]} | text: {text}")
 
     if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
         await db.upsert_user(
