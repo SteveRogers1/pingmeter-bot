@@ -35,6 +35,12 @@ def format_duration(seconds: int) -> str:
         hours = (seconds % 86400) // 3600
         return f"{days}д {hours}ч"
 
+def escape_username(username: str, user_id: int) -> str:
+    """Экранирует специальные символы в username для Markdown"""
+    if username is None:
+        return f'user_{user_id}'
+    return username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+
 def generate_activation_code() -> str:
     """Генерирует одноразовый код активации"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
@@ -483,7 +489,7 @@ async def cmd_debug_open_pings(message: Message) -> None:
         else:
             link_text = "ID неизвестен"
         
-        result += f"👤 **@{username}** - {elapsed_str} ({link_text})\n"
+        result += f"👤 **@{escape_username(username, user_id)}** - {elapsed_str} ({link_text})\n"
     
     await message.reply(result, parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -524,7 +530,7 @@ async def cmd_top_fast(message: Message) -> None:
             avg_str = "N/A"
         
         # Экранируем специальные символы в username
-        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        escaped_username = escape_username(username, user_id)
         
         result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
@@ -554,7 +560,7 @@ async def cmd_top_fast(message: Message) -> None:
                 link_text = "ID неизвестен"
             
             # Экранируем специальные символы в username
-            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            escaped_username = escape_username(username, user_id)
             
             result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
     
@@ -603,7 +609,7 @@ async def cmd_top_slow(message: Message) -> None:
             avg_str = "N/A"
         
         # Экранируем специальные символы в username
-        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        escaped_username = escape_username(username, user_id)
         
         result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
@@ -633,7 +639,7 @@ async def cmd_top_slow(message: Message) -> None:
                 link_text = "ID неизвестен"
             
             # Экранируем специальные символы в username
-            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            escaped_username = escape_username(username, user_id)
             
             result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
     
@@ -682,7 +688,7 @@ async def on_top_all(callback: CallbackQuery) -> None:
             avg_str = "N/A"
         
         # Экранируем специальные символы в username
-        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        escaped_username = escape_username(username, user_id)
         
         result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
@@ -736,7 +742,7 @@ async def on_top_fast(callback: CallbackQuery) -> None:
             avg_str = "N/A"
         
         # Экранируем специальные символы в username
-        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        escaped_username = escape_username(username, user_id)
         
         result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
@@ -766,7 +772,7 @@ async def on_top_fast(callback: CallbackQuery) -> None:
                 link_text = "ID неизвестен"
             
             # Экранируем специальные символы в username
-            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            escaped_username = escape_username(username, user_id)
             
             result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
     
@@ -816,7 +822,7 @@ async def on_top_slow(callback: CallbackQuery) -> None:
             avg_str = "N/A"
         
         # Экранируем специальные символы в username
-        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        escaped_username = escape_username(username, user_id)
         
         result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
@@ -846,7 +852,7 @@ async def on_top_slow(callback: CallbackQuery) -> None:
                 link_text = "ID неизвестен"
             
             # Экранируем специальные символы в username
-            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            escaped_username = escape_username(username, user_id)
             
             result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
     
@@ -895,7 +901,7 @@ async def cmd_me(message: Message) -> None:
     
     # Экранируем специальные символы в username
     user_display_name = message.from_user.username or message.from_user.first_name
-    escaped_username = user_display_name.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+    escaped_username = escape_username(user_display_name, message.from_user.id)
     
     result = f"""
 📊 **Ваша статистика за 30 дней:**
