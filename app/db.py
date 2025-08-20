@@ -12,7 +12,19 @@ class Database:
             raise RuntimeError("DATABASE_URL not set")
 
     async def initialize(self):
-        self.pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
+        try:
+            print(f"🔌 Подключаемся к базе данных...")
+            self.pool = await asyncpg.create_pool(
+                self._dsn, 
+                min_size=1, 
+                max_size=5,
+                command_timeout=30,
+                server_settings={'application_name': 'pingmeter_bot'}
+            )
+            print(f"✅ Подключение к базе данных установлено")
+        except Exception as e:
+            print(f"❌ Ошибка подключения к базе данных: {e}")
+            raise
         async with self.pool.acquire() as conn:
             # Проверяем существующие таблицы
             existing_tables = await conn.fetch("""
