@@ -243,10 +243,13 @@ async def process_chat_name(message: Message, state: FSMContext) -> None:
     
     await state.clear()
     
+    # Экранируем специальные символы для Markdown
+    escaped_chat_name = chat_name.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+    
     await message.reply(
         f"🎉 **Чат успешно активирован!**\n\n"
         f"📋 **Информация:**\n"
-        f"• Название: {chat_name}\n"
+        f"• Название: {escaped_chat_name}\n"
         f"• Chat ID: `{chat_id}`\n"
         f"• Активировал: @{message.from_user.username or message.from_user.first_name}\n\n"
         f"✅ Теперь бот готов к работе!\n\n"
@@ -282,7 +285,9 @@ async def cmd_list_activated(message: Message) -> None:
     
     for chat_id, chat_name, activated_by, activated_at in activated_chats:
         activated_date = datetime.fromtimestamp(activated_at).strftime('%d.%m.%Y %H:%M')
-        result += f"• **{chat_name}**\n"
+        # Экранируем специальные символы для Markdown
+        escaped_chat_name = chat_name.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        result += f"• **{escaped_chat_name}**\n"
         result += f"  ID: `{chat_id}`\n"
         result += f"  Активировал: {activated_by}\n"
         result += f"  Дата: {activated_date}\n\n"
