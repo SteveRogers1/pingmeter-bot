@@ -98,7 +98,8 @@ async def cmd_start(message: Message) -> None:
                 "📋 Доступные команды:\n"
                 "/generate_code - Создать код активации для чата\n"
                 "/list_activated - Список активированных чатов\n"
-                "/deactivate_chat chat_id - Деактивировать чат\n\n"
+                "/deactivate_chat chat_id - Деактивировать чат\n"
+                "/clear_db - Очистить базу данных\n\n"
                 "🔧 Для активации чата:\n"
                 "1. Используйте /generate_code\n"
                 "2. Передайте код администратору чата\n"
@@ -469,6 +470,35 @@ async def cmd_debug_chat_id(message: Message) -> None:
 async def cmd_test(message: Message) -> None:
     """Тестовая команда"""
     await message.reply("✅ Тестовая команда работает! Новый код загрузился.")
+
+@router.message(Command("clear_db"))
+async def cmd_clear_db(message: Message) -> None:
+    """Принудительная очистка базы данных (только главный админ)"""
+    if not is_main_admin(message.from_user.id):
+        await message.reply("❌ Только главный администратор может очищать базу данных.")
+        return
+    
+    await message.reply("🗑️ Начинаю очистку базы данных...")
+    
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    try:
+        async with db.pool.acquire() as conn:
+            # Удаляем ВСЕ данные
+            await conn.execute("DELETE FROM pings")
+            await conn.execute("DELETE FROM users")
+            await conn.execute("DELETE FROM activation_codes")
+            await conn.execute("DELETE FROM activated_chats")
+            
+            # Сбрасываем счетчики
+            await conn.execute("ALTER SEQUENCE IF EXISTS pings_id_seq RESTART WITH 1")
+            await conn.execute("ALTER SEQUENCE IF EXISTS activation_codes_id_seq RESTART WITH 1")
+            await conn.execute("ALTER SEQUENCE IF EXISTS activated_chats_id_seq RESTART WITH 1")
+        
+        await message.reply("✅ База данных полностью очищена! Все данные удалены.")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка при очистке: {e}")
 
 @router.message(Command("reset_db"))
 async def cmd_reset_db(message: Message) -> None:
@@ -971,21 +1001,22 @@ async def on_message(message: Message) -> None:
         ) and (not bot_id or (ent.user and ent.user.id != bot_id)):
             logging.info(f"✅ Условия выполнены, обрабатываем entity типа '{ent.type}'")
             target_user_id = None
-        else:
-            logging.info(f"❌ Условия НЕ выполнены для entity типа '{ent.type}'")
-            continue
+            
             if ent.type == "text_mention" and ent.user:
                 target_user_id = ent.user.id
+                logging.info(f"text_mention: target_user_id={target_user_id}")
             elif ent.type == "mention":
                 mention_text = text[ent.offset : ent.offset + ent.length]
                 username = mention_text.lstrip("@")
                 logging.info(f"Ищем пользователя: mention_text='{mention_text}', username='{username}'")
                 target_user_id = await db.resolve_username(username)
                 logging.info(f"Результат поиска: username='{username}', resolved user_id={target_user_id}")
+                
                 if not target_user_id:
                     await message.reply(f"Не удалось найти пользователя @{username}. Попросите его написать любое сообщение в чат.")
                     logging.warning(f"Не удалось найти user_id для @{username}, пользователь должен написать сообщение в чат.")
                     continue
+            
             if target_user_id and target_user_id != message.from_user.id:
                 logging.info(f"Создаём пинг: {ent.type} для user_id={target_user_id}")
                 await db.record_ping(
@@ -996,6 +1027,11 @@ async def on_message(message: Message) -> None:
                     ping_reason=ent.type,
                     ping_ts=int(message.date.timestamp()),
                 )
+            else:
+                logging.info(f"Пропускаем пинг: target_user_id={target_user_id}, from_user.id={message.from_user.id}")
+        else:
+            logging.info(f"❌ Условия НЕ выполнены для entity типа '{ent.type}'")
+            continue
     
     # Закрываем самый старый открытый пинг для этого автора
     if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):

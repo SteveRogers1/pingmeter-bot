@@ -36,7 +36,7 @@ async def run() -> None:
     db = Database()  # Не передаём db_path, пусть берёт из DATABASE_URL
 
     async with app_lifespan(db):
-        bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
         setattr(bot, "db", db)
         me = await bot.get_me()
         setattr(bot, "bot_id", me.id)
