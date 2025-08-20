@@ -465,6 +465,40 @@ async def cmd_debug_chat_id(message: Message) -> None:
     
     await message.reply(debug_info, parse_mode="Markdown")
 
+@router.message(Command("test"))
+async def cmd_test(message: Message) -> None:
+    """Тестовая команда"""
+    await message.reply("✅ Тестовая команда работает! Новый код загрузился.")
+
+@router.message(Command("reset_db"))
+async def cmd_reset_db(message: Message) -> None:
+    """Принудительная очистка базы данных (только главный админ)"""
+    if not is_main_admin(message.from_user.id):
+        await message.reply("❌ Только главный администратор может очищать базу данных.")
+        return
+    
+    await message.reply("🗑️ Начинаю очистку базы данных...")
+    
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    try:
+        async with db.pool.acquire() as conn:
+            # Удаляем ВСЕ данные
+            await conn.execute("DELETE FROM pings")
+            await conn.execute("DELETE FROM users")
+            await conn.execute("DELETE FROM activation_codes")
+            await conn.execute("DELETE FROM activated_chats")
+            
+            # Сбрасываем счетчики
+            await conn.execute("ALTER SEQUENCE IF EXISTS pings_id_seq RESTART WITH 1")
+            await conn.execute("ALTER SEQUENCE IF EXISTS activation_codes_id_seq RESTART WITH 1")
+            await conn.execute("ALTER SEQUENCE IF EXISTS activated_chats_id_seq RESTART WITH 1")
+        
+        await message.reply("✅ База данных полностью очищена! Все данные удалены.")
+    except Exception as e:
+        await message.reply(f"❌ Ошибка при очистке: {e}")
+
 @router.message(Command("debug_open_pings"))
 async def cmd_debug_open_pings(message: Message) -> None:
     """Показать все открытые пинги в чате"""
