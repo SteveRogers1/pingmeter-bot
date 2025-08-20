@@ -14,55 +14,85 @@ class Database:
     async def initialize(self):
         self.pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
         async with self.pool.acquire() as conn:
-            # Создаём таблицы с правильной схемой
-            await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                last_seen_ts BIGINT
-            );
+            # Проверяем существующие таблицы
+            existing_tables = await conn.fetch("""
+                SELECT table_name FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name IN ('users', 'pings', 'activation_codes', 'activated_chats')
             """)
+            existing_table_names = [row['table_name'] for row in existing_tables]
             
-            await conn.execute("""
-            CREATE TABLE IF NOT EXISTS pings (
-                id SERIAL PRIMARY KEY,
-                chat_id BIGINT NOT NULL,
-                source_message_id BIGINT NOT NULL,
-                source_user_id BIGINT NOT NULL,
-                target_user_id BIGINT NOT NULL,
-                ping_reason TEXT NOT NULL,
-                ping_ts BIGINT NOT NULL,
-                close_ts BIGINT,
-                close_type TEXT,
-                close_message_id BIGINT,
-                reaction_emoji TEXT
-            );
-            """)
+            # Создаём таблицы если их нет
+            if 'users' not in existing_table_names:
+                await conn.execute("""
+                CREATE TABLE users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    last_seen_ts BIGINT
+                );
+                """)
             
-            await conn.execute("""
-            CREATE TABLE IF NOT EXISTS activation_codes (
-                id SERIAL PRIMARY KEY,
-                code TEXT UNIQUE NOT NULL,
-                expires_at BIGINT NOT NULL,
-                created_by BIGINT NOT NULL,
-                created_at BIGINT NOT NULL
-            );
-            """)
+            if 'pings' not in existing_table_names:
+                await conn.execute("""
+                CREATE TABLE pings (
+                    id SERIAL PRIMARY KEY,
+                    chat_id BIGINT NOT NULL,
+                    source_message_id BIGINT NOT NULL,
+                    source_user_id BIGINT NOT NULL,
+                    target_user_id BIGINT NOT NULL,
+                    ping_reason TEXT NOT NULL,
+                    ping_ts BIGINT NOT NULL,
+                    close_ts BIGINT,
+                    close_type TEXT,
+                    close_message_id BIGINT,
+                    reaction_emoji TEXT
+                );
+                """)
+            else:
+                # Миграция существующей таблицы pings
+                columns = await conn.fetch("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'pings' AND table_schema = 'public'
+                """)
+                column_names = [row['column_name'] for row in columns]
+                
+                # Если есть старая колонка closed_ts, переименовываем её
+                if 'closed_ts' in column_names and 'close_ts' not in column_names:
+                    await conn.execute("ALTER TABLE pings RENAME COLUMN closed_ts TO close_ts;")
+                
+                # Добавляем недостающие колонки если их нет
+                if 'close_type' not in column_names:
+                    await conn.execute("ALTER TABLE pings ADD COLUMN close_type TEXT;")
+                if 'close_message_id' not in column_names:
+                    await conn.execute("ALTER TABLE pings ADD COLUMN close_message_id BIGINT;")
+                if 'reaction_emoji' not in column_names:
+                    await conn.execute("ALTER TABLE pings ADD COLUMN reaction_emoji TEXT;")
             
-            await conn.execute("""
-            CREATE TABLE IF NOT EXISTS activated_chats (
-                id SERIAL PRIMARY KEY,
-                chat_id BIGINT UNIQUE NOT NULL,
-                chat_name TEXT NOT NULL,
-                activated_by BIGINT NOT NULL,
-                activated_at BIGINT NOT NULL,
-                activation_code TEXT NOT NULL
-            );
-            """)
+            if 'activation_codes' not in existing_table_names:
+                await conn.execute("""
+                CREATE TABLE activation_codes (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT UNIQUE NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    created_by BIGINT NOT NULL,
+                    created_at BIGINT NOT NULL
+                );
+                """)
             
-            # Создаём индексы
+            if 'activated_chats' not in existing_table_names:
+                await conn.execute("""
+                CREATE TABLE activated_chats (
+                    id SERIAL PRIMARY KEY,
+                    chat_id BIGINT UNIQUE NOT NULL,
+                    chat_name TEXT NOT NULL,
+                    activated_by BIGINT NOT NULL,
+                    activated_at BIGINT NOT NULL,
+                    activation_code TEXT NOT NULL
+                );
+                """)
+            
+            # Создаём индексы если их нет
             await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_pings_open ON pings(chat_id, target_user_id, close_ts);
             CREATE INDEX IF NOT EXISTS idx_pings_time ON pings(chat_id, ping_ts);
@@ -70,14 +100,26 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_activated_chats_chat_id ON activated_chats(chat_id);
             """)
             
-            # Миграция: переименовываем closed_ts в close_ts если существует
-            try:
-                await conn.execute("""
-                ALTER TABLE pings RENAME COLUMN closed_ts TO close_ts;
-                """)
-            except Exception:
-                # Колонка уже переименована или не существует
-                pass
+            # Миграция старых чатов из whitelist (если есть переменная ALLOWED_CHATS)
+            allowed_chats = os.getenv("ALLOWED_CHATS", "")
+            if allowed_chats:
+                allowed_ids = [int(x.strip()) for x in allowed_chats.split(",") if x.strip()]
+                for chat_id in allowed_ids:
+                    # Проверяем, не активирован ли уже чат
+                    existing = await conn.fetchrow(
+                        "SELECT chat_id FROM activated_chats WHERE chat_id = $1",
+                        chat_id
+                    )
+                    if not existing:
+                        # Активируем старый чат автоматически
+                        await conn.execute("""
+                        INSERT INTO activated_chats(chat_id, chat_name, activated_by, activated_at, activation_code)
+                        VALUES($1, $2, $3, $4, $5)
+                        ON CONFLICT (chat_id) DO NOTHING
+                        """,
+                        chat_id, f"Legacy Chat {chat_id}", 0, int(datetime.datetime.utcnow().timestamp()), "LEGACY_MIGRATION"
+                        )
+
 
     async def upsert_user(self, user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]):
         now = int(datetime.datetime.utcnow().timestamp())
