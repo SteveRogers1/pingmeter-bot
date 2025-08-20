@@ -343,7 +343,7 @@ async def cmd_help(message: Message) -> None:
 **Процесс активации:**
 1. Создайте код через `/generate_code`
 2. Передайте код администратору чата
-3. В чате выполните `/activate <код>`
+3. В чате выполните `/activate код`
 4. Укажите название чата
 
 **Команды в активированных чатах:**
@@ -359,7 +359,7 @@ async def cmd_help(message: Message) -> None:
 
 **Для активации в чате:**
 1. Попросите главного администратора создать код
-2. В чате выполните `/activate <код>`
+2. В чате выполните `/activate код`
 3. Укажите название чата
 
 **Команды в активированном чате:**
@@ -380,7 +380,7 @@ async def cmd_help(message: Message) -> None:
         
         is_activated = await db.is_chat_activated(message.chat.id)
         if not is_activated:
-            await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
+            await message.reply("❌ Этот чат не активирован. Используйте /activate код для активации.")
             return
         
         if not await check_admin_rights(message):
@@ -442,7 +442,7 @@ async def cmd_debug_open_pings(message: Message) -> None:
     
     is_activated = await db.is_chat_activated(message.chat.id)
     if not is_activated:
-        await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
+        await message.reply("❌ Этот чат не активирован. Используйте /activate код для активации.")
         return
     
     if not await check_admin_rights(message):
@@ -489,7 +489,7 @@ async def cmd_top(message: Message) -> None:
     
     is_activated = await db.is_chat_activated(message.chat.id)
     if not is_activated:
-        await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
+        await message.reply("❌ Этот чат не активирован. Используйте /activate код для активации.")
         return
     
     if not await check_admin_rights(message):
@@ -612,7 +612,7 @@ async def cmd_me(message: Message) -> None:
     
     is_activated = await db.is_chat_activated(message.chat.id)
     if not is_activated:
-        await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
+        await message.reply("❌ Этот чат не активирован. Используйте /activate код для активации.")
         return
     
     if not await check_admin_rights(message):
