@@ -521,7 +521,10 @@ async def cmd_top(message: Message) -> None:
         else:
             avg_str = "N/A"
         
-        result += f"{i}. **@{username}** - {avg_str} (n={n})\n"
+        # Экранируем специальные символы в username
+        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        
+        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
@@ -548,7 +551,10 @@ async def cmd_top(message: Message) -> None:
             else:
                 link_text = "ID неизвестен"
             
-            result += f"👤 **@{username}** - {elapsed_str} ({link_text})\n"
+            # Экранируем специальные символы в username
+            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            
+            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопку "Показать всех"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -593,7 +599,10 @@ async def on_top_all(callback: CallbackQuery) -> None:
         else:
             avg_str = "N/A"
         
-        result += f"{i}. **@{username}** - {avg_str} (n={n})\n"
+        # Экранируем специальные символы в username
+        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        
+        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
     
     # Разбиваем на части, если сообщение слишком длинное
     if len(result) > 4096:
@@ -642,10 +651,14 @@ async def cmd_me(message: Message) -> None:
     else:
         avg_str = "N/A"
     
+    # Экранируем специальные символы в username
+    user_display_name = message.from_user.username or message.from_user.first_name
+    escaped_username = user_display_name.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+    
     result = f"""
 📊 **Ваша статистика за 30 дней:**
 
-👤 **Пользователь:** @{message.from_user.username or message.from_user.first_name}
+👤 **Пользователь:** @{escaped_username}
 📈 **Количество пингов:** {n}
 ⏱️ **Среднее время ответа:** {avg_str}
 """
