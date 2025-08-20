@@ -41,6 +41,12 @@ def escape_username(username: str, user_id: int) -> str:
         return f'user_{user_id}'
     return username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
 
+def format_user_display(username: str, user_id: int) -> str:
+    """Форматирует отображение пользователя с правильным префиксом @"""
+    if username is None:
+        return f'user_{user_id}'  # Без @ для user_id
+    return f'@{escape_username(username, user_id)}'  # С @ для username
+
 def generate_activation_code() -> str:
     """Генерирует одноразовый код активации"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
@@ -489,7 +495,7 @@ async def cmd_debug_open_pings(message: Message) -> None:
         else:
             link_text = "ID неизвестен"
         
-        result += f"👤 **@{escape_username(username, user_id)}** - {elapsed_str} ({link_text})\n"
+        result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
     
     await message.reply(result, parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -532,7 +538,7 @@ async def cmd_top_fast(message: Message) -> None:
         # Экранируем специальные символы в username
         escaped_username = escape_username(username, user_id)
         
-        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
@@ -611,7 +617,7 @@ async def cmd_top_slow(message: Message) -> None:
         # Экранируем специальные символы в username
         escaped_username = escape_username(username, user_id)
         
-        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
@@ -690,7 +696,7 @@ async def on_top_all(callback: CallbackQuery) -> None:
         # Экранируем специальные символы в username
         escaped_username = escape_username(username, user_id)
         
-        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Разбиваем на части, если сообщение слишком длинное
     if len(result) > 4096:
@@ -744,7 +750,7 @@ async def on_top_fast(callback: CallbackQuery) -> None:
         # Экранируем специальные символы в username
         escaped_username = escape_username(username, user_id)
         
-        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(callback.message.chat.id)
@@ -824,7 +830,7 @@ async def on_top_slow(callback: CallbackQuery) -> None:
         # Экранируем специальные символы в username
         escaped_username = escape_username(username, user_id)
         
-        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(callback.message.chat.id)
@@ -906,7 +912,7 @@ async def cmd_me(message: Message) -> None:
     result = f"""
 📊 **Ваша статистика за 30 дней:**
 
-👤 **Пользователь:** @{escaped_username}
+👤 **Пользователь:** {format_user_display(user_display_name, message.from_user.id)}
 📈 **Количество пингов:** {n}
 ⏱️ **Среднее время ответа:** {avg_str}
 """
