@@ -926,7 +926,10 @@ async def on_message(message: Message) -> None:
     entities = message.entities or []
     text = message.text or message.caption or ""
     
+    logging.info(f"Обрабатываем сообщение: entities={len(entities)}, text='{text[:50]}...'")
+    
     for ent in entities:
+        logging.info(f"Проверяем entity: type={ent.type}, user={ent.user.id if ent.user else None}")
         if (
             (ent.type == "text_mention" and ent.user and not ent.user.is_bot)
             or (ent.type == "mention")
