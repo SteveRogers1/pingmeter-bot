@@ -368,7 +368,8 @@ async def cmd_help(message: Message) -> None:
 3. Укажите название чата
 
 **Команды в активированном чате:**
-• `/top` - Топ пользователей по времени ответа
+• `/top_fast` - Топ быстрых ответов
+• `/top_slow` - Топ медленных ответов
 • `/me` - Ваша личная статистика
 • `/help` - Показать эту справку
 
@@ -396,7 +397,8 @@ async def cmd_help(message: Message) -> None:
 📋 **Справка по командам:**
 
 **Основные команды:**
-• `/top` - Показать топ пользователей по времени ответа
+• `/top_fast` - Топ быстрых ответов
+• `/top_slow` - Топ медленных ответов
 • `/me` - Показать вашу личную статистику
 • `/help` - Показать эту справку
 
@@ -485,9 +487,9 @@ async def cmd_debug_open_pings(message: Message) -> None:
     
     await message.reply(result, parse_mode="Markdown", disable_web_page_preview=True)
 
-@router.message(Command("top"))
-async def cmd_top(message: Message) -> None:
-    """Показать топ пользователей по времени ответа"""
+@router.message(Command("top_fast"))
+async def cmd_top_fast(message: Message) -> None:
+    """Показать топ быстрых пользователей по времени ответа"""
     # Проверяем, активирован ли чат
     bot = message.bot
     db: Database = getattr(bot, "db")
@@ -503,14 +505,14 @@ async def cmd_top(message: Message) -> None:
     
     bot_id = getattr(bot, "bot_id", None)
     
-    # Получаем топ пользователей
-    top_users = await db.get_top(message.chat.id, limit=10)
+    # Получаем топ быстрых пользователей
+    top_users = await db.get_top(message.chat.id, limit=10, order="ASC")
     
     if not top_users:
         await message.reply("📊 Пока нет статистики в этом чате.")
         return
     
-    result = "🏆 **Топ 10 по времени ответа:**\n\n"
+    result = "⚡ **Топ 10 быстрых ответов:**\n\n"
     
     for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
         if bot_id and user_id == bot_id:
@@ -545,7 +547,7 @@ async def cmd_top(message: Message) -> None:
                 chat_username = message.chat.username
                 if chat_username:
                     message_link = f"https://t.me/{chat_username}/{source_message_id}"
-                    link_text = f"[сообщение]({message_link})"
+                    link_text = f"[вопрос]({message_link})"
                 else:
                     link_text = f"ID: {source_message_id}"
             else:
@@ -556,9 +558,89 @@ async def cmd_top(message: Message) -> None:
             
             result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
     
-    # Добавляем кнопку "Показать всех"
+    # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Показать всех (до 1000)", callback_data="top_all")]
+        [InlineKeyboardButton(text="📊 Показать всех (до 1000)", callback_data="top_all")],
+        [InlineKeyboardButton(text="🐌 Топ медленных", callback_data="top_slow")]
+    ])
+    
+    await message.reply(result, parse_mode="Markdown", reply_markup=keyboard, disable_web_page_preview=True)
+
+@router.message(Command("top_slow"))
+async def cmd_top_slow(message: Message) -> None:
+    """Показать топ медленных пользователей по времени ответа"""
+    # Проверяем, активирован ли чат
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        await message.reply("❌ Этот чат не активирован. Используйте /activate код для активации.")
+        return
+    
+    if not await check_admin_rights(message):
+        await message.reply("❌ Только администраторы могут использовать команды бота.")
+        return
+    
+    bot_id = getattr(bot, "bot_id", None)
+    
+    # Получаем топ медленных пользователей
+    top_users = await db.get_top(message.chat.id, limit=10, order="DESC")
+    
+    if not top_users:
+        await message.reply("📊 Пока нет статистики в этом чате.")
+        return
+    
+    result = "🐌 **Топ 10 медленных ответов:**\n\n"
+    
+    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+        if bot_id and user_id == bot_id:
+            continue  # Пропускаем бота
+        
+        if avg_sec is not None:
+            avg_str = format_duration(int(avg_sec))
+        else:
+            avg_str = "N/A"
+        
+        # Экранируем специальные символы в username
+        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        
+        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+    
+    # Получаем открытые пинги
+    open_pings = await db.get_open_pings(message.chat.id)
+    if open_pings:
+        result += "\n⏰ **Открытые пинги:**\n"
+        for user_id, ping_ts, source_message_id in open_pings:
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            elapsed = int(datetime.now().timestamp()) - ping_ts
+            elapsed_str = format_duration(elapsed)
+            
+            user_info = await db.get_user_info(user_id)
+            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            
+            # Создаём ссылку на исходное сообщение
+            if source_message_id:
+                chat_username = message.chat.username
+                if chat_username:
+                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
+                    link_text = f"[вопрос]({message_link})"
+                else:
+                    link_text = f"ID: {source_message_id}"
+            else:
+                link_text = "ID неизвестен"
+            
+            # Экранируем специальные символы в username
+            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            
+            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+    
+    # Добавляем кнопки
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Показать всех (до 1000)", callback_data="top_all")],
+        [InlineKeyboardButton(text="⚡ Топ быстрых", callback_data="top_fast")]
     ])
     
     await message.reply(result, parse_mode="Markdown", reply_markup=keyboard, disable_web_page_preview=True)
@@ -615,6 +697,166 @@ async def on_top_all(callback: CallbackQuery) -> None:
     else:
         await callback.message.edit_text(result, parse_mode="Markdown")
     
+    await callback.answer()
+
+@router.callback_query(F.data == "top_fast")
+async def on_top_fast(callback: CallbackQuery) -> None:
+    """Показать топ быстрых пользователей"""
+    # Проверяем, активирован ли чат
+    bot = callback.message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(callback.message.chat.id)
+    if not is_activated:
+        await callback.answer("❌ Чат не активирован", show_alert=True)
+        return
+    
+    if not await check_admin_rights(callback.message):
+        await callback.answer("❌ Только администраторы", show_alert=True)
+        return
+    
+    bot_id = getattr(bot, "bot_id", None)
+    
+    # Получаем топ быстрых пользователей
+    top_users = await db.get_top(callback.message.chat.id, limit=10, order="ASC")
+    
+    if not top_users:
+        await callback.answer("📊 Нет данных", show_alert=True)
+        return
+    
+    result = "⚡ **Топ 10 быстрых ответов:**\n\n"
+    
+    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+        if bot_id and user_id == bot_id:
+            continue  # Пропускаем бота
+        
+        if avg_sec is not None:
+            avg_str = format_duration(int(avg_sec))
+        else:
+            avg_str = "N/A"
+        
+        # Экранируем специальные символы в username
+        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        
+        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+    
+    # Получаем открытые пинги
+    open_pings = await db.get_open_pings(callback.message.chat.id)
+    if open_pings:
+        result += "\n⏰ **Открытые пинги:**\n"
+        for user_id, ping_ts, source_message_id in open_pings:
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            elapsed = int(datetime.now().timestamp()) - ping_ts
+            elapsed_str = format_duration(elapsed)
+            
+            user_info = await db.get_user_info(user_id)
+            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            
+            # Создаём ссылку на исходное сообщение
+            if source_message_id:
+                chat_username = callback.message.chat.username
+                if chat_username:
+                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
+                    link_text = f"[вопрос]({message_link})"
+                else:
+                    link_text = f"ID: {source_message_id}"
+            else:
+                link_text = "ID неизвестен"
+            
+            # Экранируем специальные символы в username
+            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            
+            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+    
+    # Добавляем кнопки
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Показать всех (до 1000)", callback_data="top_all")],
+        [InlineKeyboardButton(text="🐌 Топ медленных", callback_data="top_slow")]
+    ])
+    
+    await callback.message.edit_text(result, parse_mode="Markdown", reply_markup=keyboard)
+    await callback.answer()
+
+@router.callback_query(F.data == "top_slow")
+async def on_top_slow(callback: CallbackQuery) -> None:
+    """Показать топ медленных пользователей"""
+    # Проверяем, активирован ли чат
+    bot = callback.message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(callback.message.chat.id)
+    if not is_activated:
+        await callback.answer("❌ Чат не активирован", show_alert=True)
+        return
+    
+    if not await check_admin_rights(callback.message):
+        await callback.answer("❌ Только администраторы", show_alert=True)
+        return
+    
+    bot_id = getattr(bot, "bot_id", None)
+    
+    # Получаем топ медленных пользователей
+    top_users = await db.get_top(callback.message.chat.id, limit=10, order="DESC")
+    
+    if not top_users:
+        await callback.answer("📊 Нет данных", show_alert=True)
+        return
+    
+    result = "🐌 **Топ 10 медленных ответов:**\n\n"
+    
+    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+        if bot_id and user_id == bot_id:
+            continue  # Пропускаем бота
+        
+        if avg_sec is not None:
+            avg_str = format_duration(int(avg_sec))
+        else:
+            avg_str = "N/A"
+        
+        # Экранируем специальные символы в username
+        escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+        
+        result += f"{i}. **@{escaped_username}** - {avg_str} (n={n})\n"
+    
+    # Получаем открытые пинги
+    open_pings = await db.get_open_pings(callback.message.chat.id)
+    if open_pings:
+        result += "\n⏰ **Открытые пинги:**\n"
+        for user_id, ping_ts, source_message_id in open_pings:
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            elapsed = int(datetime.now().timestamp()) - ping_ts
+            elapsed_str = format_duration(elapsed)
+            
+            user_info = await db.get_user_info(user_id)
+            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            
+            # Создаём ссылку на исходное сообщение
+            if source_message_id:
+                chat_username = callback.message.chat.username
+                if chat_username:
+                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
+                    link_text = f"[вопрос]({message_link})"
+                else:
+                    link_text = f"ID: {source_message_id}"
+            else:
+                link_text = "ID неизвестен"
+            
+            # Экранируем специальные символы в username
+            escaped_username = username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+            
+            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+    
+    # Добавляем кнопки
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Показать всех (до 1000)", callback_data="top_all")],
+        [InlineKeyboardButton(text="⚡ Топ быстрых", callback_data="top_fast")]
+    ])
+    
+    await callback.message.edit_text(result, parse_mode="Markdown", reply_markup=keyboard)
     await callback.answer()
 
 @router.message(Command("me"))

@@ -251,11 +251,17 @@ class Database:
                 }
             return None
 
-    async def get_top(self, chat_id: int, limit: int = 10):
-        """Получить топ пользователей по времени ответа"""
+    async def get_top(self, chat_id: int, limit: int = 10, order: str = "ASC"):
+        """Получить топ пользователей по времени ответа
+        
+        Args:
+            chat_id: ID чата
+            limit: Количество записей
+            order: "ASC" для быстрых (по возрастанию), "DESC" для медленных (по убыванию)
+        """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT 
                     p.target_user_id,
                     COUNT(*) as n,
@@ -267,7 +273,7 @@ class Database:
                 AND p.close_ts IS NOT NULL
                 GROUP BY p.target_user_id, u.username
                 HAVING COUNT(*) >= 1
-                ORDER BY avg_sec ASC
+                ORDER BY avg_sec {order}
                 LIMIT $2
                 """,
                 chat_id, limit
