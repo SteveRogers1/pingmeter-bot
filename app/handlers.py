@@ -930,11 +930,16 @@ async def on_message(message: Message) -> None:
     
     for ent in entities:
         logging.info(f"Проверяем entity: type={ent.type}, user={ent.user.id if ent.user else None}")
+        logging.info(f"Проверяем условия: ent.type='{ent.type}', ent.user={ent.user}, bot_id={bot_id}")
         if (
             (ent.type == "text_mention" and ent.user and not ent.user.is_bot)
             or (ent.type == "mention")
         ) and (not bot_id or (ent.user and ent.user.id != bot_id)):
+            logging.info(f"✅ Условия выполнены, обрабатываем entity типа '{ent.type}'")
             target_user_id = None
+        else:
+            logging.info(f"❌ Условия НЕ выполнены для entity типа '{ent.type}'")
+            continue
             if ent.type == "text_mention" and ent.user:
                 target_user_id = ent.user.id
             elif ent.type == "mention":
