@@ -47,6 +47,19 @@ def format_user_display(username: str, user_id: int) -> str:
         return f'user_{user_id}'  # Без @ для user_id
     return f'@{escape_username(username, user_id)}'  # С @ для username
 
+def create_message_link(chat_id: int, chat_username: str, message_id: int) -> str:
+    """Создает ссылку на сообщение для публичных и приватных чатов"""
+    if chat_username:
+        return f"https://t.me/{chat_username}/{message_id}"
+    else:
+        # Для приватных чатов
+        chat_id_str = str(chat_id)
+        if chat_id_str.startswith('-100'):
+            chat_id_short = chat_id_str[4:]
+        else:
+            chat_id_short = chat_id_str
+        return f"https://t.me/c/{chat_id_short}/{message_id}"
+
 def generate_activation_code() -> str:
     """Генерирует одноразовый код активации"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
@@ -486,12 +499,8 @@ async def cmd_debug_open_pings(message: Message) -> None:
         
         # Создаём ссылку на исходное сообщение
         if source_message_id:
-            chat_username = message.chat.username
-            if chat_username:
-                message_link = f"https://t.me/{chat_username}/{source_message_id}"
-                link_text = f"[сообщение]({message_link})"
-            else:
-                link_text = f"ID: {source_message_id}"
+            message_link = create_message_link(message.chat.id, message.chat.username, source_message_id)
+            link_text = f"[сообщение]({message_link})"
         else:
             link_text = "ID неизвестен"
         
@@ -556,19 +565,12 @@ async def cmd_top_fast(message: Message) -> None:
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
-                chat_username = message.chat.username
-                if chat_username:
-                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
-                    link_text = f"[вопрос]({message_link})"
-                else:
-                    link_text = f"ID: {source_message_id}"
+                message_link = create_message_link(message.chat.id, message.chat.username, source_message_id)
+                link_text = f"[вопрос]({message_link})"
             else:
                 link_text = "ID неизвестен"
             
-            # Экранируем специальные символы в username
-            escaped_username = escape_username(username, user_id)
-            
-            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -635,19 +637,12 @@ async def cmd_top_slow(message: Message) -> None:
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
-                chat_username = message.chat.username
-                if chat_username:
-                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
-                    link_text = f"[вопрос]({message_link})"
-                else:
-                    link_text = f"ID: {source_message_id}"
+                message_link = create_message_link(message.chat.id, message.chat.username, source_message_id)
+                link_text = f"[вопрос]({message_link})"
             else:
                 link_text = "ID неизвестен"
             
-            # Экранируем специальные символы в username
-            escaped_username = escape_username(username, user_id)
-            
-            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -768,19 +763,12 @@ async def on_top_fast(callback: CallbackQuery) -> None:
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
-                chat_username = callback.message.chat.username
-                if chat_username:
-                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
-                    link_text = f"[вопрос]({message_link})"
-                else:
-                    link_text = f"ID: {source_message_id}"
+                message_link = create_message_link(callback.message.chat.id, callback.message.chat.username, source_message_id)
+                link_text = f"[вопрос]({message_link})"
             else:
                 link_text = "ID неизвестен"
-            
-            # Экранируем специальные символы в username
-            escaped_username = escape_username(username, user_id)
-            
-            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+
+            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -848,19 +836,12 @@ async def on_top_slow(callback: CallbackQuery) -> None:
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
-                chat_username = callback.message.chat.username
-                if chat_username:
-                    message_link = f"https://t.me/{chat_username}/{source_message_id}"
-                    link_text = f"[вопрос]({message_link})"
-                else:
-                    link_text = f"ID: {source_message_id}"
+                message_link = create_message_link(callback.message.chat.id, callback.message.chat.username, source_message_id)
+                link_text = f"[вопрос]({message_link})"
             else:
                 link_text = "ID неизвестен"
             
-            # Экранируем специальные символы в username
-            escaped_username = escape_username(username, user_id)
-            
-            result += f"👤 **@{escaped_username}** - {elapsed_str} ({link_text})\n"
+            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
