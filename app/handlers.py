@@ -232,19 +232,32 @@ async def cmd_activate(message: Message, state: FSMContext) -> None:
     await state.set_state(ChatActivation.waiting_for_chat_name)
     await message.reply(
         f"✅ Код `{activation_code}` действителен!\n\n"
-        f"📝 Теперь укажите название для этого чата (для удобства управления):\n\n"
-        f"💡 Примеры: \"Рабочий чат\", \"Команда разработки\", \"Общий чат\""
+        f"📝 Теперь используйте команду `/name название` для установки названия чата.\n\n"
+        f"💡 Примеры:\n"
+        f"• `/name Рабочий чат`\n"
+        f"• `/name Команда разработки`\n"
+        f"• `/name Общий чат`"
     )
 
-@router.message(ChatActivation.waiting_for_chat_name)
-async def process_chat_name(message: Message, state: FSMContext) -> None:
-    """Обрабатывает название чата и завершает активацию"""
+@router.message(Command("name"))
+async def cmd_name(message: Message, state: FSMContext) -> None:
+    """Устанавливает название чата при активации"""
     if message.chat.type == "private":
-        await message.reply("❌ Активация должна выполняться в чате.")
-        await state.clear()
+        await message.reply("❌ Эта команда должна выполняться в чате.")
         return
     
-    chat_name = message.text.strip()
+    # Проверяем, что мы в состоянии ожидания названия
+    current_state = await state.get_state()
+    if current_state != ChatActivation.waiting_for_chat_name.state:
+        await message.reply("❌ Сначала используйте команду /activate код")
+        return
+    
+    args = message.text.split(maxsplit=1)
+    if len(args) != 2:
+        await message.reply("❌ Используйте: /name название_чата")
+        return
+    
+    chat_name = args[1].strip()
     if len(chat_name) < 2 or len(chat_name) > 50:
         await message.reply("❌ Название чата должно быть от 2 до 50 символов.")
         return
@@ -283,9 +296,22 @@ async def process_chat_name(message: Message, state: FSMContext) -> None:
         f"• /top - Топ пользователей\n"
         f"• /me - Ваша статистика\n"
         f"• /help - Справка\n\n"
-        f"🔒 Только администраторы могут использовать команды.",
-        parse_mode="Markdown"
+        f"🔒 **Только администраторы могут использовать команды.**"
     )
+
+@router.message(ChatActivation.waiting_for_chat_name)
+async def process_chat_name(message: Message, state: FSMContext) -> None:
+    """Обрабатывает любые сообщения в состоянии ожидания названия (кроме команды /name)"""
+    # Если это не команда /name, напоминаем о правильном использовании
+    if not message.text or not message.text.startswith('/name'):
+        await message.reply(
+            "❌ Используйте команду `/name название_чата` для установки названия.\n\n"
+            "💡 Примеры:\n"
+            "• `/name Рабочий чат`\n"
+            "• `/name Команда разработки`\n"
+            "• `/name Общий чат`"
+        )
+        return
 
 @router.message(Command("list_activated"))
 async def cmd_list_activated(message: Message) -> None:
@@ -966,7 +992,10 @@ async def cmd_me(message: Message) -> None:
 
 @router.message(F.text | F.caption)
 async def on_message(message: Message) -> None:
-    """Обработчик всех текстовых сообщений"""
+    """Обработчик всех текстовых сообщений (кроме команд)"""
+    # Пропускаем команды - они обрабатываются отдельными хендлерами
+    if message.text and message.text.startswith('/'):
+        return
     # Проверяем, активирован ли чат
     bot = message.bot
     db: Database = getattr(bot, "db")
