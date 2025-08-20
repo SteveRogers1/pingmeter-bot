@@ -150,55 +150,63 @@ class Database:
             )
             return row["user_id"] if row else None
 
-    async def get_top(self, chat_id: int, since_ts: Optional[int], limit: int = 10) -> List[Tuple[int, float, int, Optional[str], Optional[str], Optional[str]]]:
-        params: List = [chat_id]
-        where = "closed_ts IS NOT NULL"
-        if since_ts is not None:
-            where += " AND ping_ts >= $2"
-            params.append(since_ts)
-        query = f"""
-        SELECT p.target_user_id,
-               AVG(p.closed_ts - p.ping_ts) AS avg_response,
-               COUNT(*) as cnt,
-               u.username,
-               u.first_name,
-               u.last_name
-        FROM pings p
-        LEFT JOIN users u ON u.user_id = p.target_user_id
-        WHERE p.chat_id=$1 AND {where}
-        GROUP BY p.target_user_id, u.username, u.first_name, u.last_name
-        ORDER BY avg_response ASC
-        LIMIT {limit}
-        """
+    async def get_user_info(self, user_id: int):
+        """Получить информацию о пользователе"""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(query, *params)
-            return [
-                (
-                    int(r[0]),
-                    float(r[1]),
-                    int(r[2]),
-                    r[3],
-                    r[4],
-                    r[5],
-                )
-                for r in rows
-            ]
+            row = await conn.fetchrow(
+                """
+                SELECT username, first_name, last_name
+                FROM users
+                WHERE user_id = $1
+                """,
+                user_id
+            )
+            if row:
+                return {
+                    'username': row['username'],
+                    'first_name': row['first_name'],
+                    'last_name': row['last_name']
+                }
+            return None
 
-    async def get_user_stats(self, chat_id: int, user_id: int, since_ts: Optional[int]) -> Optional[Tuple[float, int]]:
+    async def get_top(self, chat_id: int, limit: int = 10):
+        """Получить топ пользователей по времени ответа"""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT 
+                    p.target_user_id,
+                    COUNT(*) as n,
+                    AVG(p.close_ts - p.ping_ts) as avg_sec,
+                    u.username
+                FROM pings p
+                LEFT JOIN users u ON p.target_user_id = u.user_id
+                WHERE p.chat_id = $1 
+                AND p.close_ts IS NOT NULL
+                GROUP BY p.target_user_id, u.username
+                HAVING COUNT(*) >= 1
+                ORDER BY avg_sec ASC
+                LIMIT $2
+                """,
+                chat_id, limit
+            )
+            return [(row['target_user_id'], row['n'], row['avg_sec'], row['username'] or f'user_{row["target_user_id"]}') for row in rows]
+
+    async def get_user_stats(self, chat_id: int, user_id: int, since_ts: Optional[int]) -> Optional[Tuple[int, float]]:
         params: List = [chat_id, user_id]
-        where = "closed_ts IS NOT NULL"
+        where = "close_ts IS NOT NULL"
         if since_ts is not None:
             where += " AND ping_ts >= $3"
             params.append(since_ts)
         query = f"""
-        SELECT AVG(closed_ts - ping_ts) AS avg_response, COUNT(*) as cnt
+        SELECT COUNT(*) as cnt, AVG(close_ts - ping_ts) AS avg_response
         FROM pings
         WHERE chat_id=$1 AND target_user_id=$2 AND {where}
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(query, *params)
-            if row and row[0] is not None:
-                return float(row[0]), int(row[1])
+            if row and row[0] > 0:
+                return (int(row[0]), float(row[1]) if row[1] is not None else None)
             return None
 
     async def get_open_pings(self, chat_id: int) -> List[Tuple[int, int, int]]:
@@ -211,6 +219,23 @@ class Database:
                 chat_id
             )
             return [(r[0], r[1], r[2] if r[2] is not None else None) for r in rows]
+
+    async def close_oldest_open_ping_by_reaction(self, chat_id: int, target_user_id: int, close_message_id: int, close_ts: int):
+        """Закрыть самый старый открытый пинг по реакции"""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE pings
+                SET close_ts = $3, close_message_id = $4
+                WHERE id = (
+                    SELECT id FROM pings
+                    WHERE chat_id = $1 AND target_user_id = $2 AND close_ts IS NULL
+                    ORDER BY ping_ts ASC
+                    LIMIT 1
+                )
+                """,
+                chat_id, target_user_id, close_ts, close_message_id
+            )
 
     async def close(self):
         if self.pool is not None:
