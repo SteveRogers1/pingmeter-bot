@@ -1,5 +1,7 @@
 import os
 import logging
+import secrets
+import string
 from datetime import datetime, timedelta
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,8 +14,9 @@ from .db import Database
 router = Router()
 
 # Состояния для FSM
-class ChatManagement(StatesGroup):
-    waiting_for_chat_id = State()
+class ChatActivation(StatesGroup):
+    waiting_for_code = State()
+    waiting_for_chat_name = State()
 
 def format_duration(seconds: int) -> str:
     """Форматирует время в человекочитаемый вид"""
@@ -32,14 +35,9 @@ def format_duration(seconds: int) -> str:
         hours = (seconds % 86400) // 3600
         return f"{days}д {hours}ч"
 
-def is_chat_allowed(chat_id: int) -> bool:
-    """Проверяет, разрешён ли чат в whitelist"""
-    allowed_chats = os.getenv("ALLOWED_CHATS", "")
-    if not allowed_chats:
-        return False
-    
-    allowed_ids = [int(x.strip()) for x in allowed_chats.split(",") if x.strip()]
-    return chat_id in allowed_ids
+def generate_activation_code() -> str:
+    """Генерирует одноразовый код активации"""
+    return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
 def is_main_admin(user_id: int) -> bool:
     """Проверяет, является ли пользователь главным администратором"""
@@ -67,36 +65,330 @@ async def check_bot_admin_rights(message: Message) -> bool:
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     """Обработчик команды /start"""
-    if not is_chat_allowed(message.chat.id):
-        await message.reply("❌ Этот чат не авторизован для использования бота.")
+    if message.chat.type == "private":
+        # ЛС с ботом
+        if is_main_admin(message.from_user.id):
+            await message.reply(
+                "👋 Привет! Я главный администратор бота.\n\n"
+                "📋 Доступные команды:\n"
+                "/generate_code - Создать код активации для чата\n"
+                "/list_activated - Список активированных чатов\n"
+                "/deactivate_chat <chat_id> - Деактивировать чат\n\n"
+                "🔧 Для активации чата:\n"
+                "1. Используйте /generate_code\n"
+                "2. Передайте код администратору чата\n"
+                "3. В чате выполните /activate <код>"
+            )
+        else:
+            await message.reply(
+                "👋 Привет! Я бот для отслеживания времени ответа на пинги.\n\n"
+                "🔧 Для активации в чате:\n"
+                "1. Попросите главного администратора создать код\n"
+                "2. В чате выполните /activate <код>\n\n"
+                "📋 Команды в активированном чате:\n"
+                "/top - Топ пользователей\n"
+                "/me - Ваша статистика\n"
+                "/help - Справка"
+            )
+    else:
+        # Групповой чат
+        bot = message.bot
+        db: Database = getattr(bot, "db")
+        
+        # Проверяем, активирован ли чат
+        is_activated = await db.is_chat_activated(message.chat.id)
+        if not is_activated:
+            await message.reply(
+                "❌ Этот чат не активирован для использования бота.\n\n"
+                "🔧 Для активации:\n"
+                "1. Попросите главного администратора создать код\n"
+                "2. Выполните команду /activate <код>\n\n"
+                "💡 Код можно получить в личных сообщениях с ботом."
+            )
+            return
+        
+        if not await check_admin_rights(message):
+            await message.reply("❌ Только администраторы могут использовать команды бота.")
+            return
+        
+        await message.reply(
+            "👋 Привет! Я бот для отслеживания времени ответа на пинги.\n\n"
+            "📋 Доступные команды:\n"
+            "/top - Топ пользователей по времени ответа\n"
+            "/me - Моя статистика\n"
+            "/help - Справка\n"
+            "/debug_chat_id - Показать ID чата\n"
+            "/debug_open_pings - Открытые пинги\n\n"
+            "🔒 Только администраторы могут использовать команды."
+        )
+
+@router.message(Command("generate_code"))
+async def cmd_generate_code(message: Message) -> None:
+    """Генерирует код активации для чата (только в ЛС)"""
+    if message.chat.type != "private":
+        await message.reply("❌ Эта команда доступна только в личных сообщениях с ботом.")
+        return
+    
+    if not is_main_admin(message.from_user.id):
+        await message.reply("❌ Только главный администратор может создавать коды активации.")
+        return
+    
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    # Генерируем код
+    activation_code = generate_activation_code()
+    expires_at = int((datetime.now() + timedelta(hours=24)).timestamp())
+    
+    # Сохраняем код в базе
+    await db.save_activation_code(activation_code, expires_at, message.from_user.id)
+    
+    await message.reply(
+        f"🔑 **Код активации создан!**\n\n"
+        f"**Код:** `{activation_code}`\n"
+        f"**Действует до:** {datetime.fromtimestamp(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
+        f"📋 **Инструкция для активации:**\n"
+        f"1. Добавьте бота в чат\n"
+        f"2. Сделайте бота администратором\n"
+        f"3. Выполните команду: `/activate {activation_code}`\n"
+        f"4. Укажите название чата\n\n"
+        f"⚠️ **Код одноразовый и действителен 24 часа!**",
+        parse_mode="HTML"
+    )
+
+@router.message(Command("activate"))
+async def cmd_activate(message: Message, state: FSMContext) -> None:
+    """Активирует чат по коду"""
+    if message.chat.type == "private":
+        await message.reply("❌ Эта команда должна выполняться в чате, который нужно активировать.")
         return
     
     if not await check_admin_rights(message):
-        await message.reply("❌ Только администраторы могут использовать команды бота.")
+        await message.reply("❌ Только администраторы могут активировать бота в чате.")
         return
     
-    await message.reply(
-        "👋 Привет! Я бот для отслеживания времени ответа на пинги.\n\n"
-        "📋 Доступные команды:\n"
-        "/top - Топ пользователей по времени ответа\n"
-        "/me - Моя статистика\n"
-        "/help - Справка\n"
-        "/debug_chat_id - Показать ID чата\n"
-        "/debug_open_pings - Открытые пинги\n\n"
-        "🔒 Только администраторы могут использовать команды."
+    # Проверяем, не активирован ли уже чат
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if is_activated:
+        await message.reply("✅ Этот чат уже активирован!")
+        return
+    
+    # Получаем код из команды
+    args = message.text.split()
+    if len(args) != 2:
+        await message.reply(
+            "❌ Неверный формат команды.\n\n"
+            "📋 Использование:\n"
+            "/activate <код>\n\n"
+            "💡 Пример: `/activate ABC12345`",
+            parse_mode="HTML"
+        )
+        return
+    
+    activation_code = args[1].upper()
+    
+    # Проверяем код
+    code_info = await db.get_activation_code(activation_code)
+    if not code_info:
+        await message.reply("❌ Неверный код активации или код истёк.")
+        return
+    
+    # Сохраняем информацию о чате для активации
+    await state.update_data(
+        activation_code=activation_code,
+        chat_id=message.chat.id,
+        chat_title=message.chat.title or "Личные сообщения"
     )
+    
+    # Запрашиваем название чата
+    await state.set_state(ChatActivation.waiting_for_chat_name)
+    await message.reply(
+        f"✅ Код `{activation_code}` действителен!\n\n"
+        f"📝 Теперь укажите название для этого чата (для удобства управления):\n\n"
+        f"💡 Примеры: \"Рабочий чат\", \"Команда разработки\", \"Общий чат\""
+    )
+
+@router.message(ChatActivation.waiting_for_chat_name)
+async def process_chat_name(message: Message, state: FSMContext) -> None:
+    """Обрабатывает название чата и завершает активацию"""
+    if message.chat.type == "private":
+        await message.reply("❌ Активация должна выполняться в чате.")
+        await state.clear()
+        return
+    
+    chat_name = message.text.strip()
+    if len(chat_name) < 2 or len(chat_name) > 50:
+        await message.reply("❌ Название чата должно быть от 2 до 50 символов.")
+        return
+    
+    data = await state.get_data()
+    activation_code = data.get("activation_code")
+    chat_id = data.get("chat_id")
+    
+    if not activation_code or not chat_id:
+        await message.reply("❌ Ошибка активации. Попробуйте снова.")
+        await state.clear()
+        return
+    
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    # Активируем чат
+    await db.activate_chat(chat_id, chat_name, activation_code, message.from_user.id)
+    
+    # Удаляем использованный код
+    await db.delete_activation_code(activation_code)
+    
+    await state.clear()
+    
+    await message.reply(
+        f"🎉 **Чат успешно активирован!**\n\n"
+        f"📋 **Информация:**\n"
+        f"• Название: {chat_name}\n"
+        f"• Chat ID: `{chat_id}`\n"
+        f"• Активировал: @{message.from_user.username or message.from_user.first_name}\n\n"
+        f"✅ Теперь бот готов к работе!\n\n"
+        f"📋 **Доступные команды:**\n"
+        f"• `/top` - Топ пользователей\n"
+        f"• `/me` - Ваша статистика\n"
+        f"• `/help` - Справка\n\n"
+        f"🔒 Только администраторы могут использовать команды.",
+        parse_mode="HTML"
+    )
+
+@router.message(Command("list_activated"))
+async def cmd_list_activated(message: Message) -> None:
+    """Показывает список активированных чатов (только в ЛС)"""
+    if message.chat.type != "private":
+        await message.reply("❌ Эта команда доступна только в личных сообщениях с ботом.")
+        return
+    
+    if not is_main_admin(message.from_user.id):
+        await message.reply("❌ Только главный администратор может просматривать список чатов.")
+        return
+    
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    activated_chats = await db.get_activated_chats()
+    
+    if not activated_chats:
+        await message.reply("📋 Нет активированных чатов.")
+        return
+    
+    result = "📋 **Активированные чаты:**\n\n"
+    
+    for chat_id, chat_name, activated_by, activated_at in activated_chats:
+        activated_date = datetime.fromtimestamp(activated_at).strftime('%d.%m.%Y %H:%M')
+        result += f"• **{chat_name}**\n"
+        result += f"  ID: `{chat_id}`\n"
+        result += f"  Активировал: {activated_by}\n"
+        result += f"  Дата: {activated_date}\n\n"
+    
+    await message.reply(result, parse_mode="HTML")
+
+@router.message(Command("deactivate_chat"))
+async def cmd_deactivate_chat(message: Message) -> None:
+    """Деактивирует чат (только в ЛС)"""
+    if message.chat.type != "private":
+        await message.reply("❌ Эта команда доступна только в личных сообщениях с ботом.")
+        return
+    
+    if not is_main_admin(message.from_user.id):
+        await message.reply("❌ Только главный администратор может деактивировать чаты.")
+        return
+    
+    args = message.text.split()
+    if len(args) != 2:
+        await message.reply(
+            "❌ Неверный формат команды.\n\n"
+            "📋 Использование:\n"
+            "/deactivate_chat <chat_id>\n\n"
+            "💡 Chat ID можно получить командой /list_activated"
+        )
+        return
+    
+    try:
+        chat_id = int(args[1])
+    except ValueError:
+        await message.reply("❌ Неверный формат Chat ID. Должно быть число.")
+        return
+    
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    # Деактивируем чат
+    success = await db.deactivate_chat(chat_id)
+    
+    if success:
+        await message.reply(f"✅ Чат `{chat_id}` успешно деактивирован!")
+    else:
+        await message.reply(f"❌ Чат `{chat_id}` не найден или уже деактивирован.")
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     """Обработчик команды /help"""
-    if not is_chat_allowed(message.chat.id):
-        return
-    
-    if not await check_admin_rights(message):
-        await message.reply("❌ Только администраторы могут использовать команды бота.")
-        return
-    
-    help_text = """
+    if message.chat.type == "private":
+        if is_main_admin(message.from_user.id):
+            help_text = """
+📋 **Справка для главного администратора:**
+
+**Команды в ЛС:**
+• `/generate_code` - Создать код активации для чата
+• `/list_activated` - Список активированных чатов
+• `/deactivate_chat <chat_id>` - Деактивировать чат
+
+**Процесс активации:**
+1. Создайте код через `/generate_code`
+2. Передайте код администратору чата
+3. В чате выполните `/activate <код>`
+4. Укажите название чата
+
+**Команды в активированных чатах:**
+• `/top` - Топ пользователей по времени ответа
+• `/me` - Ваша личная статистика
+• `/help` - Показать эту справку
+• `/debug_chat_id` - Показать ID чата
+• `/debug_open_pings` - Показать открытые пинги
+"""
+        else:
+            help_text = """
+📋 **Справка по использованию бота:**
+
+**Для активации в чате:**
+1. Попросите главного администратора создать код
+2. В чате выполните `/activate <код>`
+3. Укажите название чата
+
+**Команды в активированном чате:**
+• `/top` - Топ пользователей по времени ответа
+• `/me` - Ваша личная статистика
+• `/help` - Показать эту справку
+
+**Как работает бот:**
+• Отслеживает пинги через @username или text_mention
+• Закрывает пинг при любом сообщении или реакции
+• Показывает статистику по времени ответа
+• Работает только в активированных чатах
+"""
+    else:
+        # Проверяем, активирован ли чат
+        bot = message.bot
+        db: Database = getattr(bot, "db")
+        
+        is_activated = await db.is_chat_activated(message.chat.id)
+        if not is_activated:
+            await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
+            return
+        
+        if not await check_admin_rights(message):
+            await message.reply("❌ Только администраторы могут использовать команды бота.")
+            return
+        
+        help_text = """
 📋 **Справка по командам:**
 
 **Основные команды:**
@@ -112,10 +404,10 @@ async def cmd_help(message: Message) -> None:
 • Отслеживает пинги через @username или text_mention
 • Закрывает пинг при любом сообщении или реакции от пользователя
 • Показывает статистику по времени ответа
-• Работает только в авторизованных чатах
+• Работает только в активированных чатах
 
 **Требования:**
-• Чат должен быть в whitelist
+• Чат должен быть активирован
 • Пользователь должен быть администратором
 • Бот должен быть администратором чата
 """
@@ -136,11 +428,8 @@ async def cmd_debug_chat_id(message: Message) -> None:
 **Название:** {chat_title}
 **Chat ID:** `{chat_id}`
 
-**Для добавления в whitelist:**
-Добавьте `{chat_id}` в переменную окружения `ALLOWED_CHATS`
-
-**Пример:**
-`ALLOWED_CHATS=123456789,-987654321,{chat_id}`
+**Для деактивации:**
+Используйте команду `/deactivate_chat {chat_id}` в ЛС с ботом
 """
     
     await message.reply(debug_info, parse_mode="HTML")
@@ -148,15 +437,18 @@ async def cmd_debug_chat_id(message: Message) -> None:
 @router.message(Command("debug_open_pings"))
 async def cmd_debug_open_pings(message: Message) -> None:
     """Показать все открытые пинги в чате"""
-    if not is_chat_allowed(message.chat.id):
+    # Проверяем, активирован ли чат
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
         return
     
     if not await check_admin_rights(message):
         await message.reply("❌ Только администраторы могут использовать команды бота.")
         return
-    
-    bot = message.bot
-    db: Database = getattr(bot, "db")
     
     open_pings = await db.get_open_pings(message.chat.id)
     
@@ -192,15 +484,19 @@ async def cmd_debug_open_pings(message: Message) -> None:
 @router.message(Command("top"))
 async def cmd_top(message: Message) -> None:
     """Показать топ пользователей по времени ответа"""
-    if not is_chat_allowed(message.chat.id):
+    # Проверяем, активирован ли чат
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
         return
     
     if not await check_admin_rights(message):
         await message.reply("❌ Только администраторы могут использовать команды бота.")
         return
     
-    bot = message.bot
-    db: Database = getattr(bot, "db")
     bot_id = getattr(bot, "bot_id", None)
     
     # Получаем топ пользователей
@@ -260,16 +556,19 @@ async def cmd_top(message: Message) -> None:
 @router.callback_query(F.data == "top_all")
 async def on_top_all(callback: CallbackQuery) -> None:
     """Показать всех пользователей (до 1000)"""
-    if not is_chat_allowed(callback.message.chat.id):
-        await callback.answer("❌ Чат не авторизован", show_alert=True)
+    # Проверяем, активирован ли чат
+    bot = callback.message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(callback.message.chat.id)
+    if not is_activated:
+        await callback.answer("❌ Чат не активирован", show_alert=True)
         return
     
     if not await check_admin_rights(callback.message):
         await callback.answer("❌ Только администраторы", show_alert=True)
         return
     
-    bot = callback.message.bot
-    db: Database = getattr(bot, "db")
     bot_id = getattr(bot, "bot_id", None)
     
     # Получаем всех пользователей
@@ -308,7 +607,13 @@ async def on_top_all(callback: CallbackQuery) -> None:
 @router.message(Command("me"))
 async def cmd_me(message: Message) -> None:
     """Показать личную статистику пользователя"""
-    if not is_chat_allowed(message.chat.id):
+    # Проверяем, активирован ли чат
+    bot = message.bot
+    db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        await message.reply("❌ Этот чат не активирован. Используйте /activate <код> для активации.")
         return
     
     if not await check_admin_rights(message):
@@ -317,9 +622,6 @@ async def cmd_me(message: Message) -> None:
     
     if not message.from_user:
         return
-    
-    bot = message.bot
-    db: Database = getattr(bot, "db")
     
     # Получаем статистику за последние 30 дней
     since_ts = int((datetime.now() - timedelta(days=30)).timestamp())
@@ -349,11 +651,14 @@ async def cmd_me(message: Message) -> None:
 @router.message(F.text | F.caption)
 async def on_message(message: Message) -> None:
     """Обработчик всех текстовых сообщений"""
-    if not is_chat_allowed(message.chat.id):
-        return
-    
+    # Проверяем, активирован ли чат
     bot = message.bot
     db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        return  # Игнорируем сообщения в неактивированных чатах
+    
     bot_id = getattr(bot, "bot_id", None)
 
     # Регистрируем пользователя
@@ -409,11 +714,14 @@ async def on_message(message: Message) -> None:
 @router.message(F.reply_to_message)
 async def on_reply(message: Message) -> None:
     """Обработчик ответов на сообщения"""
-    if not is_chat_allowed(message.chat.id):
-        return
-    
+    # Проверяем, активирован ли чат
     bot = message.bot
     db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        return  # Игнорируем сообщения в неактивированных чатах
+    
     bot_id = getattr(bot, "bot_id", None)
     
     # Закрываем самый старый открытый пинг для этого автора
@@ -428,11 +736,14 @@ async def on_reply(message: Message) -> None:
 @router.message(F.reaction)
 async def on_reaction(message: Message) -> None:
     """Обработчик реакций на сообщения"""
-    if not is_chat_allowed(message.chat.id):
-        return
-    
+    # Проверяем, активирован ли чат
     bot = message.bot
     db: Database = getattr(bot, "db")
+    
+    is_activated = await db.is_chat_activated(message.chat.id)
+    if not is_activated:
+        return  # Игнорируем сообщения в неактивированных чатах
+    
     bot_id = getattr(bot, "bot_id", None)
     
     # Закрываем самый старый открытый пинг для этого автора
