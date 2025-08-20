@@ -150,10 +150,10 @@ async def cmd_generate_code(message: Message) -> None:
         f"📋 **Инструкция для активации:**\n"
         f"1. Добавьте бота в чат\n"
         f"2. Сделайте бота администратором\n"
-        f"3. Выполните команду: `/activate {activation_code}`\n"
+        f"3. Выполните команду: /activate {activation_code}\n"
         f"4. Укажите название чата\n\n"
         f"⚠️ **Код одноразовый и действителен 24 часа!**",
-        parse_mode="HTML"
+        parse_mode="Markdown"
     )
 
 @router.message(Command("activate"))
@@ -183,8 +183,7 @@ async def cmd_activate(message: Message, state: FSMContext) -> None:
             "❌ Неверный формат команды.\n\n"
             "📋 Использование:\n"
             "/activate <код>\n\n"
-            "💡 Пример: `/activate ABC12345`",
-            parse_mode="HTML"
+            "💡 Пример: /activate ABC12345"
         )
         return
     
@@ -252,11 +251,11 @@ async def process_chat_name(message: Message, state: FSMContext) -> None:
         f"• Активировал: @{message.from_user.username or message.from_user.first_name}\n\n"
         f"✅ Теперь бот готов к работе!\n\n"
         f"📋 **Доступные команды:**\n"
-        f"• `/top` - Топ пользователей\n"
-        f"• `/me` - Ваша статистика\n"
-        f"• `/help` - Справка\n\n"
+        f"• /top - Топ пользователей\n"
+        f"• /me - Ваша статистика\n"
+        f"• /help - Справка\n\n"
         f"🔒 Только администраторы могут использовать команды.",
-        parse_mode="HTML"
+        parse_mode="Markdown"
     )
 
 @router.message(Command("list_activated"))
@@ -288,7 +287,7 @@ async def cmd_list_activated(message: Message) -> None:
         result += f"  Активировал: {activated_by}\n"
         result += f"  Дата: {activated_date}\n\n"
     
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result, parse_mode="Markdown")
 
 @router.message(Command("deactivate_chat"))
 async def cmd_deactivate_chat(message: Message) -> None:
@@ -429,10 +428,10 @@ async def cmd_debug_chat_id(message: Message) -> None:
 **Chat ID:** `{chat_id}`
 
 **Для деактивации:**
-Используйте команду `/deactivate_chat {chat_id}` в ЛС с ботом
+Используйте команду /deactivate_chat {chat_id} в ЛС с ботом
 """
     
-    await message.reply(debug_info, parse_mode="HTML")
+    await message.reply(debug_info, parse_mode="Markdown")
 
 @router.message(Command("debug_open_pings"))
 async def cmd_debug_open_pings(message: Message) -> None:
@@ -479,7 +478,7 @@ async def cmd_debug_open_pings(message: Message) -> None:
         
         result += f"👤 **@{username}** - {elapsed_str} ({link_text})\n"
     
-    await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
+    await message.reply(result, parse_mode="Markdown", disable_web_page_preview=True)
 
 @router.message(Command("top"))
 async def cmd_top(message: Message) -> None:
@@ -551,7 +550,7 @@ async def cmd_top(message: Message) -> None:
         [InlineKeyboardButton(text="📊 Показать всех (до 1000)", callback_data="top_all")]
     ])
     
-    await message.reply(result, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True)
+    await message.reply(result, parse_mode="Markdown", reply_markup=keyboard, disable_web_page_preview=True)
 
 @router.callback_query(F.data == "top_all")
 async def on_top_all(callback: CallbackQuery) -> None:
@@ -596,11 +595,11 @@ async def on_top_all(callback: CallbackQuery) -> None:
         parts = [result[i:i+4096] for i in range(0, len(result), 4096)]
         for i, part in enumerate(parts):
             if i == 0:
-                await callback.message.edit_text(part, parse_mode="HTML")
+                await callback.message.edit_text(part, parse_mode="Markdown")
             else:
-                await callback.message.answer(part, parse_mode="HTML")
+                await callback.message.answer(part, parse_mode="Markdown")
     else:
-        await callback.message.edit_text(result, parse_mode="HTML")
+        await callback.message.edit_text(result, parse_mode="Markdown")
     
     await callback.answer()
 
@@ -646,7 +645,7 @@ async def cmd_me(message: Message) -> None:
 ⏱️ **Среднее время ответа:** {avg_str}
 """
     
-    await message.reply(result, parse_mode="HTML")
+    await message.reply(result, parse_mode="Markdown")
 
 @router.message(F.text | F.caption)
 async def on_message(message: Message) -> None:
