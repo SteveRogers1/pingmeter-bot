@@ -940,8 +940,9 @@ async def on_message(message: Message) -> None:
             elif ent.type == "mention":
                 mention_text = text[ent.offset : ent.offset + ent.length]
                 username = mention_text.lstrip("@")
+                logging.info(f"Ищем пользователя: mention_text='{mention_text}', username='{username}'")
                 target_user_id = await db.resolve_username(username)
-                logging.info(f"mention_text: {mention_text}, username: {username}, resolved user_id: {target_user_id}")
+                logging.info(f"Результат поиска: username='{username}', resolved user_id={target_user_id}")
                 if not target_user_id:
                     await message.reply(f"Не удалось найти пользователя @{username}. Попросите его написать любое сообщение в чат.")
                     logging.warning(f"Не удалось найти user_id для @{username}, пользователь должен написать сообщение в чат.")

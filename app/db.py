@@ -224,13 +224,16 @@ class Database:
 
     async def resolve_username(self, username: str) -> Optional[int]:
         async with self.pool.acquire() as conn:
+            print(f"🔍 Ищем username='{username}' в базе данных")
             row = await conn.fetchrow(
                 """
                 SELECT user_id FROM users WHERE lower(username)=lower($1) ORDER BY last_seen_ts DESC LIMIT 1
                 """,
                 username
             )
-            return row["user_id"] if row else None
+            result = row["user_id"] if row else None
+            print(f"📋 Результат поиска username='{username}': user_id={result}")
+            return result
 
     async def get_user_info(self, user_id: int):
         """Получить информацию о пользователе"""
