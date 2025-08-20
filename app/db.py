@@ -14,6 +14,7 @@ class Database:
     async def initialize(self):
         self.pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
         async with self.pool.acquire() as conn:
+            # Создаём таблицы с правильной схемой
             await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -22,6 +23,9 @@ class Database:
                 last_name TEXT,
                 last_seen_ts BIGINT
             );
+            """)
+            
+            await conn.execute("""
             CREATE TABLE IF NOT EXISTS pings (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT NOT NULL,
@@ -35,6 +39,9 @@ class Database:
                 close_message_id BIGINT,
                 reaction_emoji TEXT
             );
+            """)
+            
+            await conn.execute("""
             CREATE TABLE IF NOT EXISTS activation_codes (
                 id SERIAL PRIMARY KEY,
                 code TEXT UNIQUE NOT NULL,
@@ -42,6 +49,9 @@ class Database:
                 created_by BIGINT NOT NULL,
                 created_at BIGINT NOT NULL
             );
+            """)
+            
+            await conn.execute("""
             CREATE TABLE IF NOT EXISTS activated_chats (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT UNIQUE NOT NULL,
@@ -50,11 +60,24 @@ class Database:
                 activated_at BIGINT NOT NULL,
                 activation_code TEXT NOT NULL
             );
+            """)
+            
+            # Создаём индексы
+            await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_pings_open ON pings(chat_id, target_user_id, close_ts);
             CREATE INDEX IF NOT EXISTS idx_pings_time ON pings(chat_id, ping_ts);
             CREATE INDEX IF NOT EXISTS idx_activation_codes_expires ON activation_codes(expires_at);
             CREATE INDEX IF NOT EXISTS idx_activated_chats_chat_id ON activated_chats(chat_id);
             """)
+            
+            # Миграция: переименовываем closed_ts в close_ts если существует
+            try:
+                await conn.execute("""
+                ALTER TABLE pings RENAME COLUMN closed_ts TO close_ts;
+                """)
+            except Exception:
+                # Колонка уже переименована или не существует
+                pass
 
     async def upsert_user(self, user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]):
         now = int(datetime.datetime.utcnow().timestamp())
