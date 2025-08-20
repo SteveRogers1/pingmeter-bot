@@ -1,7 +1,7 @@
 import pytest
 from app.db import Database
 import asyncio
-import datetime
+from datetime import datetime
 
 @pytest.mark.asyncio
 async def test_ping_creation_and_open_pings(tmp_path):
@@ -11,7 +11,7 @@ async def test_ping_creation_and_open_pings(tmp_path):
     chat_id = 123
     user_id = 1
     source_user_id = 2
-    now = int(datetime.datetime.utcnow().timestamp())
+    now = int(datetime.utcnow().timestamp())
     # Создать пинг через тег
     await db.record_ping(chat_id, 100, source_user_id, user_id, "mention", now)
     open_pings = await db.get_open_pings(chat_id)

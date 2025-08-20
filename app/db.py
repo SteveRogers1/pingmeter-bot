@@ -1,6 +1,6 @@
 import os
 import asyncpg
-import datetime
+from datetime import datetime
 from typing import Optional, List, Tuple
 
 class Database:
@@ -129,12 +129,12 @@ class Database:
                         VALUES($1, $2, $3, $4, $5)
                         ON CONFLICT (chat_id) DO NOTHING
                         """,
-                        chat_id, f"Legacy Chat {chat_id}", 0, int(datetime.datetime.utcnow().timestamp()), "LEGACY_MIGRATION"
+                        chat_id, f"Legacy Chat {chat_id}", 0, int(datetime.utcnow().timestamp()), "LEGACY_MIGRATION"
                         )
 
 
     async def upsert_user(self, user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]):
-        now = int(datetime.datetime.utcnow().timestamp())
+        now = int(datetime.utcnow().timestamp())
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -342,7 +342,7 @@ class Database:
 
     async def save_activation_code(self, code: str, expires_at: int, created_by: int):
         """Сохраняет код активации"""
-        now = int(datetime.datetime.utcnow().timestamp())
+        now = int(datetime.utcnow().timestamp())
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -361,7 +361,7 @@ class Database:
                 FROM activation_codes
                 WHERE code = $1 AND expires_at > $2
                 """,
-                code, int(datetime.datetime.utcnow().timestamp())
+                code, int(datetime.utcnow().timestamp())
             )
             if row:
                 return {
@@ -385,7 +385,7 @@ class Database:
 
     async def activate_chat(self, chat_id: int, chat_name: str, activation_code: str, activated_by: int):
         """Активирует чат"""
-        now = int(datetime.datetime.utcnow().timestamp())
+        now = int(datetime.utcnow().timestamp())
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
