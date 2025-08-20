@@ -8,8 +8,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from handlers import router
-from db import Database
+from app.handlers import router
+from app.db import Database
 
 
 @asynccontextmanager
