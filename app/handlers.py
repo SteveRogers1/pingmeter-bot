@@ -76,6 +76,13 @@ def create_message_link(chat_id: int, chat_username: Optional[str], message_id: 
             chat_id_short = chat_id_str
         return f"https://t.me/c/{chat_id_short}/{message_id}"
 
+def is_main_admin(user_id: int) -> bool:
+    """Проверяет, является ли пользователь главным администратором"""
+    main_admin_id = os.getenv("MAIN_ADMIN_ID")
+    if not main_admin_id:
+        return False
+    return user_id == int(main_admin_id)
+
 def generate_activation_code() -> str:
     """Генерирует одноразовый код активации"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
