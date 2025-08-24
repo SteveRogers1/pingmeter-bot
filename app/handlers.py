@@ -61,7 +61,7 @@ def format_user_display(username: Optional[str], user_id: int) -> str:
     """Форматирует отображение пользователя с правильным префиксом @"""
     if not username:
         return f'user_{user_id}'  # Без @ для user_id
-    return f'@{escape_username(username, user_id)}'  # С @ для username
+    return f'@{username}'  # С @ для username
 
 def create_message_link(chat_id: int, chat_username: Optional[str], message_id: int) -> str:
     """Создает ссылку на сообщение для публичных и приватных чатов"""
@@ -137,15 +137,11 @@ def escape_username(username: Optional[str], user_id: int) -> str:
     if not username:
         return f"user_{user_id}"
     
-    # Экранируем специальные символы Markdown
-    escaped = re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', username)
+    # Экранируем все специальные символы Markdown
+    escaped = username.replace('\\', '\\\\').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
     return escaped
 
-def format_user_display(username: Optional[str], user_id: int) -> str:
-    """Форматирует отображение пользователя"""
-    if not username:
-        return f"user_{user_id}"
-    return f"@{username}"
+
 
 def format_duration(seconds: int) -> str:
     """Форматирует длительность в читаемый вид"""
@@ -788,7 +784,7 @@ async def cmd_top_fast(message: Message) -> None:
     # Получаем топ быстрых пользователей
     top_users = await db.get_top(message.chat.id, limit=10, order="ASC")
     
-    result = "⚡ **Топ 10 быстрых ответов:**\n\n"
+    result = "⚡ <b>Топ 10 быстрых ответов:</b>\n\n"
     
     if not top_users:
         result += "📊 Пока нет статистики в этом чате.\n\n"
@@ -836,7 +832,7 @@ async def cmd_top_fast(message: Message) -> None:
         [InlineKeyboardButton(text="🐌 Топ медленных", callback_data="top_slow")]
     ])
     
-    await message.reply(result, parse_mode="Markdown", reply_markup=keyboard, disable_web_page_preview=True)
+    await message.reply(result, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True)
 
 @router.message(Command("top_slow"))
 async def cmd_top_slow(message: Message) -> None:
@@ -907,7 +903,7 @@ async def cmd_top_slow(message: Message) -> None:
         [InlineKeyboardButton(text="⚡ Топ быстрых", callback_data="top_fast")]
     ])
     
-    await message.reply(result, parse_mode="Markdown", reply_markup=keyboard, disable_web_page_preview=True)
+    await message.reply(result, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True)
 
 @router.callback_query(F.data == "top_all")
 async def on_top_all(callback: CallbackQuery) -> None:
