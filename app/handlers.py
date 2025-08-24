@@ -71,7 +71,7 @@ def is_main_admin(user_id: int) -> bool:
         return False
     return user_id == int(main_admin_id)
 
-def get_bot_commands(bot_username: str) -> dict:
+def get_bot_commands(bot_username: str = "pingmeter_bot") -> dict:
     """Возвращает полные команды с username бота"""
     bot_mention = f"@{bot_username}"
     return {
@@ -111,9 +111,8 @@ async def check_bot_admin_rights(message: Message) -> bool:
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     """Обработчик команды /start"""
-    # Получаем username бота и команды
-    bot_username = message.bot.username or "pingmeter_bot"
-    commands = get_bot_commands(bot_username)
+    # Получаем команды с username бота
+    commands = get_bot_commands()
     
     if message.chat.type == "private":
         # ЛС с ботом
@@ -311,8 +310,7 @@ async def cmd_name(message: Message, state: FSMContext) -> None:
     escaped_chat_name = chat_name.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
     
     # Получаем команды для отображения
-    bot_username = message.bot.username or "pingmeter_bot"
-    commands = get_bot_commands(bot_username)
+    commands = get_bot_commands()
     
     await message.reply(
         f"🎉 **Чат успешно активирован!**\n\n"
@@ -334,8 +332,7 @@ async def process_chat_name(message: Message, state: FSMContext) -> None:
     # Если это не команда /name, напоминаем о правильном использовании
     if not message.text or not message.text.startswith('/name'):
         # Получаем команды для отображения
-        bot_username = message.bot.username or "pingmeter_bot"
-        commands = get_bot_commands(bot_username)
+        commands = get_bot_commands()
         
         await message.reply(
             f"❌ Используйте команду {commands['name']} название_чата для установки названия.\n\n"
@@ -420,9 +417,8 @@ async def cmd_deactivate_chat(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     """Обработчик команды /help"""
-    # Получаем username бота и команды
-    bot_username = message.bot.username or "pingmeter_bot"
-    commands = get_bot_commands(bot_username)
+    # Получаем команды с username бота
+    commands = get_bot_commands()
     
     if message.chat.type == "private":
         if is_main_admin(message.from_user.id):
