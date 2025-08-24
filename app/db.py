@@ -72,6 +72,9 @@ class Database:
                     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
                 );
                 """)
+            else:
+                # Миграция существующей таблицы users
+                await self._migrate_users_table(conn)
             
             if 'pings' not in existing_table_names:
                 await conn.execute("""
@@ -106,6 +109,9 @@ class Database:
                     used_by BIGINT
                 );
                 """)
+            else:
+                # Миграция существующей таблицы activation_codes
+                await self._migrate_activation_codes_table(conn)
             
             if 'activated_chats' not in existing_table_names:
                 await conn.execute("""
@@ -118,6 +124,9 @@ class Database:
                     last_activity BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
                 );
                 """)
+            else:
+                # Миграция существующей таблицы activated_chats
+                await self._migrate_activated_chats_table(conn)
 
     async def _create_indexes(self):
         """Создание оптимизированных индексов"""
@@ -199,6 +208,50 @@ class Database:
             await conn.execute("ALTER TABLE pings ADD COLUMN reaction_emoji TEXT;")
         if 'created_at' not in column_names:
             await conn.execute("ALTER TABLE pings ADD COLUMN created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW());")
+
+    async def _migrate_activation_codes_table(self, conn):
+        """Миграция таблицы activation_codes"""
+        columns = await conn.fetch("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'activation_codes' AND table_schema = 'public'
+        """)
+        column_names = [row['column_name'] for row in columns]
+        
+        # Добавляем недостающие колонки если их нет
+        if 'used_at' not in column_names:
+            await conn.execute("ALTER TABLE activation_codes ADD COLUMN used_at BIGINT;")
+        if 'used_by' not in column_names:
+            await conn.execute("ALTER TABLE activation_codes ADD COLUMN used_by BIGINT;")
+        if 'created_at' not in column_names:
+            await conn.execute("ALTER TABLE activation_codes ADD COLUMN created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW());")
+
+    async def _migrate_activated_chats_table(self, conn):
+        """Миграция таблицы activated_chats"""
+        columns = await conn.fetch("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'activated_chats' AND table_schema = 'public'
+        """)
+        column_names = [row['column_name'] for row in columns]
+        
+        # Добавляем недостающие колонки если их нет
+        if 'last_activity' not in column_names:
+            await conn.execute("ALTER TABLE activated_chats ADD COLUMN last_activity BIGINT DEFAULT EXTRACT(EPOCH FROM NOW());")
+        
+        # Если есть старая колонка activation_code, удаляем её
+        if 'activation_code' in column_names:
+            await conn.execute("ALTER TABLE activated_chats DROP COLUMN activation_code;")
+
+    async def _migrate_users_table(self, conn):
+        """Миграция таблицы users"""
+        columns = await conn.fetch("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'users' AND table_schema = 'public'
+        """)
+        column_names = [row['column_name'] for row in columns]
+        
+        # Добавляем недостающие колонки если их нет
+        if 'created_at' not in column_names:
+            await conn.execute("ALTER TABLE users ADD COLUMN created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW());")
 
     @lru_cache(maxsize=1000)
     def _hash_username(self, username: str) -> int:
