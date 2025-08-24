@@ -59,7 +59,8 @@ def escape_username(username: Optional[str], user_id: int) -> str:
 
 def format_user_display(username: Optional[str], user_id: int) -> str:
     """Форматирует отображение пользователя с правильным префиксом @"""
-    if not username:
+    # Безопасная обработка username
+    if not username or username == 'None' or username == '' or username is None:
         return f'user_{user_id}'  # Без @ для user_id
     return f'@{username}'  # С @ для username
 
