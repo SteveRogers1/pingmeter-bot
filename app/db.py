@@ -460,7 +460,7 @@ class Database:
                 """
                 SELECT code, expires_at, created_by, created_at
                 FROM activation_codes
-                WHERE code = $1 AND expires_at > $2
+                WHERE code = $1 AND expires_at > $2 AND used_at IS NULL
                 """,
                 code, int(datetime.utcnow().timestamp())
             )
@@ -488,17 +488,27 @@ class Database:
         """Активирует чат"""
         now = int(datetime.utcnow().timestamp())
         async with self.pool.acquire() as conn:
+            # Активируем чат
             await conn.execute(
                 """
-                INSERT INTO activated_chats(chat_id, chat_name, activated_by, activated_at, activation_code)
-                VALUES($1, $2, $3, $4, $5)
+                INSERT INTO activated_chats(chat_id, chat_name, activated_by, activated_at)
+                VALUES($1, $2, $3, $4)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     chat_name = EXCLUDED.chat_name,
                     activated_by = EXCLUDED.activated_by,
-                    activated_at = EXCLUDED.activated_at,
-                    activation_code = EXCLUDED.activation_code
+                    activated_at = EXCLUDED.activated_at
                 """,
-                chat_id, chat_name, activated_by, now, activation_code
+                chat_id, chat_name, activated_by, now
+            )
+            
+            # Отмечаем код как использованный
+            await conn.execute(
+                """
+                UPDATE activation_codes 
+                SET used_at = $1, used_by = $2 
+                WHERE code = $3
+                """,
+                now, activated_by, activation_code
             )
 
     async def is_chat_activated(self, chat_id: int) -> bool:

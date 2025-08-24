@@ -419,9 +419,6 @@ async def cmd_name(message: Message, state: FSMContext) -> None:
     # Активируем чат
     await db.activate_chat(chat_id, chat_name, activation_code, message.from_user.id)
     
-    # Удаляем использованный код
-    await db.delete_activation_code(activation_code)
-    
     await state.clear()
     
     # Экранируем специальные символы для Markdown
