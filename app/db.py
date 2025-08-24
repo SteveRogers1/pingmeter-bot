@@ -152,6 +152,7 @@ class Database:
 
     async def record_ping(self, chat_id: int, source_message_id: int, source_user_id: int, target_user_id: int, ping_reason: str, ping_ts: int):
         async with self.pool.acquire() as conn:
+            print(f"📝 Создаём пинг: chat_id={chat_id}, target_user_id={target_user_id}, reason={ping_reason}")
             # Проверяем, есть ли уже открытый пинг для этого пользователя в этом чате
             row = await conn.fetchrow(
                 """
@@ -162,7 +163,9 @@ class Database:
                 chat_id, target_user_id
             )
             if row:
+                print(f"⚠️ Уже есть открытый пинг для target_user_id={target_user_id}, не создаём новый")
                 return  # Уже есть открытый пинг, не создаём новый
+            print(f"✅ Создаём новый пинг для target_user_id={target_user_id}")
             await conn.execute(
                 """
                 INSERT INTO pings(chat_id, source_message_id, source_user_id, target_user_id, ping_reason, ping_ts)
@@ -173,6 +176,7 @@ class Database:
 
     async def close_oldest_open_ping_by_message(self, chat_id: int, target_user_id: int, close_message_id: int, close_ts: int) -> Optional[int]:
         async with self.pool.acquire() as conn:
+            print(f"🔍 Ищем открытый пинг для закрытия: chat_id={chat_id}, target_user_id={target_user_id}")
             row = await conn.fetchrow(
                 """
                 SELECT id FROM pings
@@ -183,8 +187,10 @@ class Database:
                 chat_id, target_user_id
             )
             if not row:
+                print(f"❌ Не найден открытый пинг для закрытия: chat_id={chat_id}, target_user_id={target_user_id}")
                 return None
             ping_id = row["id"]
+            print(f"✅ Закрываем пинг: ping_id={ping_id}, close_ts={close_ts}, close_message_id={close_message_id}")
             await conn.execute(
                 """
                 UPDATE pings SET close_ts=$1, close_type='message', close_message_id=$2 WHERE id=$3

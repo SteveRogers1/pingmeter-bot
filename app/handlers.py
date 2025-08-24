@@ -1127,12 +1127,17 @@ async def on_message(message: Message) -> None:
     
     # Закрываем самый старый открытый пинг для этого автора
     if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
-        await db.close_oldest_open_ping_by_message(
+        logging.info(f"🔍 Пытаемся закрыть пинг для пользователя {message.from_user.id} (username: {message.from_user.username})")
+        result = await db.close_oldest_open_ping_by_message(
             chat_id=message.chat.id,
             target_user_id=message.from_user.id,
             close_message_id=message.message_id,
             close_ts=int(message.date.timestamp()),
         )
+        if result:
+            logging.info(f"✅ Пинг закрыт: ping_id={result}")
+        else:
+            logging.info(f"❌ Не найден открытый пинг для закрытия")
 
 @router.message(F.reply_to_message)
 async def on_reply(message: Message) -> None:
@@ -1149,12 +1154,17 @@ async def on_reply(message: Message) -> None:
     
     # Закрываем самый старый открытый пинг для этого автора
     if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
-        await db.close_oldest_open_ping_by_message(
+        logging.info(f"🔍 [REPLY] Пытаемся закрыть пинг для пользователя {message.from_user.id} (username: {message.from_user.username})")
+        result = await db.close_oldest_open_ping_by_message(
             chat_id=message.chat.id,
             target_user_id=message.from_user.id,
             close_message_id=message.message_id,
             close_ts=int(message.date.timestamp()),
         )
+        if result:
+            logging.info(f"✅ [REPLY] Пинг закрыт: ping_id={result}")
+        else:
+            logging.info(f"❌ [REPLY] Не найден открытый пинг для закрытия")
 
 
 
