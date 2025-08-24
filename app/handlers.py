@@ -61,8 +61,12 @@ def format_user_display(username: Optional[str], user_id: int) -> str:
     """Форматирует отображение пользователя с кликабельной ссылкой на профиль"""
     # Безопасная обработка username
     if not username or username == 'None' or username == '' or username is None:
-        return f'user_{user_id}'  # Без ссылки для пользователей без username
-    return f'<a href="https://t.me/{username}">@{username}</a>'  # Ссылка на профиль по username
+        display_name = f'user_{user_id}'
+    else:
+        display_name = username
+    
+    # Создаем ссылку на профиль пользователя
+    return f'<a href="tg://user?id={user_id}">{display_name}</a>'
 
 def create_message_link(chat_id: int, chat_username: Optional[str], message_id: int) -> str:
     """Создает ссылку на сообщение для публичных и приватных чатов"""

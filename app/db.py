@@ -409,7 +409,22 @@ class Database:
                 """,
                 chat_id, limit
             )
-            return [(row['target_user_id'], row['n'], row['avg_sec'], row['username'] or f'user_{row["target_user_id"]}') for row in rows]
+            result = []
+            for row in rows:
+                user_id = row['target_user_id']
+                username = row['username']
+                
+                # Если нет username, получаем first_name
+                if not username:
+                    user_info = await self.get_user_info(user_id)
+                    if user_info and user_info.get('first_name'):
+                        username = user_info.get('first_name')
+                    else:
+                        username = f'user_{user_id}'
+                
+                result.append((user_id, row['n'], row['avg_sec'], username))
+            
+            return result
 
     async def get_user_stats(self, chat_id: int, user_id: int, since_ts: Optional[int]) -> Optional[Tuple[int, float]]:
         params: List = [chat_id, user_id]
