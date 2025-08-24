@@ -83,7 +83,7 @@ def get_bot_commands(bot_username: str = "pingmeter_bot") -> dict:
         "generate_code": f"/generate_code{bot_mention}",
         "activate": f"/activate{bot_mention}",
         "name": f"/name{bot_mention}",
-        "top": f"/top{bot_mention}",
+
         "top_fast": f"/top_fast{bot_mention}",
         "top_slow": f"/top_slow{bot_mention}",
         "me": f"/me{bot_mention}",
@@ -134,7 +134,8 @@ async def cmd_start(message: Message) -> None:
                 f"1. Попросите главного администратора создать код\n"
                 f"2. В чате выполните {commands['activate']} код\n\n"
                 f"📋 Команды в активированном чате:\n"
-                f"• {commands['top']} - Топ пользователей\n"
+                f"• {commands['top_fast']} - Топ быстрых ответов\n"
+                f"• {commands['top_slow']} - Топ медленных ответов\n"
                 f"• {commands['me']} - Ваша статистика\n"
                 f"• {commands['help']} - Справка"
             )
@@ -162,7 +163,8 @@ async def cmd_start(message: Message) -> None:
         await message.reply(
             f"👋 Привет! Я бот для отслеживания времени ответа на пинги.\n\n"
             f"📋 Доступные команды:\n"
-            f"• {commands['top']} - Топ пользователей по времени ответа\n"
+            f"• {commands['top_fast']} - Топ быстрых ответов\n"
+            f"• {commands['top_slow']} - Топ медленных ответов\n"
             f"• {commands['me']} - Моя статистика\n"
             f"• {commands['help']} - Справка\n"
             f"• {commands['debug_chat_id']} - Показать ID чата\n"
@@ -302,18 +304,6 @@ async def cmd_name(message: Message, state: FSMContext) -> None:
     # Удаляем использованный код
     await db.delete_activation_code(activation_code)
     
-    # Автоматически собираем участников чата
-    await message.reply("🔄 Собираю информацию об участниках чата...")
-    try:
-        members_data = await get_chat_members(bot, chat_id)
-        if members_data:
-            await db.bulk_add_chat_members(chat_id, members_data)
-            await message.reply(f"✅ Добавлено {len(members_data)} участников в базу данных")
-        else:
-            await message.reply("⚠️ Добавлены только администраторы чата. Остальные участники будут добавлены автоматически при их первом сообщении или при входе в чат.")
-    except Exception as e:
-        await message.reply(f"⚠️ Ошибка при сборе участников: {e}")
-    
     await state.clear()
     
     # Экранируем специальные символы для Markdown
@@ -330,7 +320,8 @@ async def cmd_name(message: Message, state: FSMContext) -> None:
         f"• Активировал: @{message.from_user.username or message.from_user.first_name}\n\n"
         f"✅ Теперь бот готов к работе!\n\n"
         f"📋 **Доступные команды:**\n"
-        f"• {commands['top']} - Топ пользователей\n"
+        f"• {commands['top_fast']} - Топ быстрых ответов\n"
+        f"• {commands['top_slow']} - Топ медленных ответов\n"
         f"• {commands['me']} - Ваша статистика\n"
         f"• {commands['help']} - Справка\n\n"
         f"🔒 **Только администраторы могут использовать команды.**"
@@ -450,7 +441,8 @@ async def cmd_help(message: Message) -> None:
 4. Укажите название чата через {commands['name']} название
 
 **Команды в активированных чатах:**
-• {commands['top']} - Топ пользователей по времени ответа
+• {commands['top_fast']} - Топ быстрых ответов
+• {commands['top_slow']} - Топ медленных ответов
 • {commands['me']} - Ваша личная статистика
 • {commands['help']} - Показать эту справку
 • {commands['debug_chat_id']} - Показать ID чата
@@ -675,25 +667,24 @@ async def cmd_top_fast(message: Message) -> None:
     # Получаем топ быстрых пользователей
     top_users = await db.get_top(message.chat.id, limit=10, order="ASC")
     
-    if not top_users:
-        await message.reply("📊 Пока нет статистики в этом чате.")
-        return
-    
     result = "⚡ **Топ 10 быстрых ответов:**\n\n"
     
-    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
-        if bot_id and user_id == bot_id:
-            continue  # Пропускаем бота
-        
-        if avg_sec is not None:
-            avg_str = format_duration(int(avg_sec))
-        else:
-            avg_str = "N/A"
-        
-        # Экранируем специальные символы в username
-        escaped_username = escape_username(username, user_id)
-        
-        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+    if not top_users:
+        result += "📊 Пока нет статистики в этом чате.\n\n"
+    else:
+        for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            if avg_sec is not None:
+                avg_str = format_duration(int(avg_sec))
+            else:
+                avg_str = "N/A"
+            
+            # Экранируем специальные символы в username
+            escaped_username = escape_username(username, user_id)
+            
+            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
@@ -747,25 +738,24 @@ async def cmd_top_slow(message: Message) -> None:
     # Получаем топ медленных пользователей
     top_users = await db.get_top(message.chat.id, limit=10, order="DESC")
     
-    if not top_users:
-        await message.reply("📊 Пока нет статистики в этом чате.")
-        return
-    
     result = "🐌 **Топ 10 медленных ответов:**\n\n"
     
-    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
-        if bot_id and user_id == bot_id:
-            continue  # Пропускаем бота
-        
-        if avg_sec is not None:
-            avg_str = format_duration(int(avg_sec))
-        else:
-            avg_str = "N/A"
-        
-        # Экранируем специальные символы в username
-        escaped_username = escape_username(username, user_id)
-        
-        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+    if not top_users:
+        result += "📊 Пока нет статистики в этом чате.\n\n"
+    else:
+        for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            if avg_sec is not None:
+                avg_str = format_duration(int(avg_sec))
+            else:
+                avg_str = "N/A"
+            
+            # Экранируем специальные символы в username
+            escaped_username = escape_username(username, user_id)
+            
+            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
@@ -873,25 +863,24 @@ async def on_top_fast(callback: CallbackQuery) -> None:
     # Получаем топ быстрых пользователей
     top_users = await db.get_top(callback.message.chat.id, limit=10, order="ASC")
     
-    if not top_users:
-        await callback.answer("📊 Нет данных", show_alert=True)
-        return
-    
     result = "⚡ **Топ 10 быстрых ответов:**\n\n"
     
-    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
-        if bot_id and user_id == bot_id:
-            continue  # Пропускаем бота
-        
-        if avg_sec is not None:
-            avg_str = format_duration(int(avg_sec))
-        else:
-            avg_str = "N/A"
-        
-        # Экранируем специальные символы в username
-        escaped_username = escape_username(username, user_id)
-        
-        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+    if not top_users:
+        result += "📊 Пока нет статистики в этом чате.\n\n"
+    else:
+        for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            if avg_sec is not None:
+                avg_str = format_duration(int(avg_sec))
+            else:
+                avg_str = "N/A"
+            
+            # Экранируем специальные символы в username
+            escaped_username = escape_username(username, user_id)
+            
+            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(callback.message.chat.id)
@@ -946,25 +935,24 @@ async def on_top_slow(callback: CallbackQuery) -> None:
     # Получаем топ медленных пользователей
     top_users = await db.get_top(callback.message.chat.id, limit=10, order="DESC")
     
-    if not top_users:
-        await callback.answer("📊 Нет данных", show_alert=True)
-        return
-    
     result = "🐌 **Топ 10 медленных ответов:**\n\n"
     
-    for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
-        if bot_id and user_id == bot_id:
-            continue  # Пропускаем бота
-        
-        if avg_sec is not None:
-            avg_str = format_duration(int(avg_sec))
-        else:
-            avg_str = "N/A"
-        
-        # Экранируем специальные символы в username
-        escaped_username = escape_username(username, user_id)
-        
-        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+    if not top_users:
+        result += "📊 Пока нет статистики в этом чате.\n\n"
+    else:
+        for i, (user_id, n, avg_sec, username) in enumerate(top_users, 1):
+            if bot_id and user_id == bot_id:
+                continue  # Пропускаем бота
+            
+            if avg_sec is not None:
+                avg_str = format_duration(int(avg_sec))
+            else:
+                avg_str = "N/A"
+            
+            # Экранируем специальные символы в username
+            escaped_username = escape_username(username, user_id)
+            
+            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(callback.message.chat.id)
@@ -1045,6 +1033,8 @@ async def cmd_me(message: Message) -> None:
 """
     
     await message.reply(result, parse_mode="Markdown")
+
+
 
 @router.message(F.text | F.caption)
 async def on_message(message: Message) -> None:
