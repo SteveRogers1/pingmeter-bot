@@ -61,7 +61,7 @@ def format_user_display(username: Optional[str], user_id: int) -> str:
     """Форматирует отображение пользователя с кликабельной ссылкой на профиль"""
     # Безопасная обработка username
     if not username or username == 'None' or username == '' or username is None:
-        return f'<a href="tg://user?id={user_id}">user_{user_id}</a>'  # Ссылка на профиль по user_id
+        return f'user_{user_id}'  # Без ссылки для пользователей без username
     return f'<a href="https://t.me/{username}">@{username}</a>'  # Ссылка на профиль по username
 
 def create_message_link(chat_id: int, chat_username: Optional[str], message_id: int) -> str:
@@ -1215,11 +1215,18 @@ async def on_message(message: Message) -> None:
                 target_user_id = await db.resolve_username(username)
                 logging.info(f"Поиск в БД: username='{username}', resolved user_id={target_user_id}")
                 
-                # Если не нашли, создаем временного пользователя
+                # Если не нашли, создаем пользователя с реальным username
                 if not target_user_id:
-                    logging.info(f"Создаем временного пользователя для @{username}")
-                    target_user_id = await db.create_temp_user_by_username(username)
-                    logging.info(f"Создан временный пользователь: username='{username}', temp_user_id={target_user_id}")
+                    logging.info(f"Создаем пользователя для @{username}")
+                    # Создаем пользователя с реальным username
+                    await db.upsert_user(
+                        user_id=0,  # Временный ID, будет обновлен при первом сообщении
+                        username=username,
+                        first_name=username,
+                        last_name=None
+                    )
+                    target_user_id = await db.resolve_username(username)
+                    logging.info(f"Создан пользователь: username='{username}', user_id={target_user_id}")
             
             if target_user_id and target_user_id != message.from_user.id:
                 logging.info(f"Создаём пинг: {ent.type} для user_id={target_user_id}")
