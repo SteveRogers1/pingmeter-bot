@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from typing import List, Tuple, Optional
+
 
 from app.db import Database
 
@@ -64,46 +64,9 @@ def generate_activation_code() -> str:
     """Генерирует одноразовый код активации"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
-async def get_chat_members(bot, chat_id: int) -> List[Tuple[int, str, str, str]]:
-    """Получает список участников чата"""
-    try:
-        members_data = []
-        # Используем get_chat_administrators() как альтернативу
-        admins = await bot.get_chat_administrators(chat_id)
-        for admin in admins:
-            if not admin.user.is_bot:
-                members_data.append((
-                    admin.user.id,
-                    admin.user.username,
-                    admin.user.first_name,
-                    admin.user.last_name
-                ))
-        
-        # Также пробуем получить информацию о чате
-        chat = await bot.get_chat(chat_id)
-        if hasattr(chat, 'all_members_are_administrators') and chat.all_members_are_administrators:
-            # Если все участники - администраторы, то у нас уже есть полный список
-            pass
-        else:
-            # Пытаемся получить участников через get_chat_member для известных пользователей
-            # Это ограниченный подход, но лучше чем ничего
-            pass
-            
-        return members_data
-    except Exception as e:
-        logging.warning(f"Не удалось получить участников чата {chat_id}: {e}")
-        return []
 
-async def try_get_user_info(bot, username: str) -> Optional[int]:
-    """Пытается получить информацию о пользователе через Telegram API"""
-    try:
-        # Пытаемся получить информацию о пользователе
-        user = await bot.get_chat(f"@{username}")
-        if user and hasattr(user, 'id'):
-            return user.id
-    except Exception as e:
-        logging.warning(f"Не удалось получить информацию о пользователе @{username}: {e}")
-    return None
+
+
 
 def is_main_admin(user_id: int) -> bool:
     """Проверяет, является ли пользователь главным администратором"""
@@ -130,8 +93,7 @@ def get_bot_commands(bot_username: str = "pingmeter_bot") -> dict:
         "list_activated": f"/list_activated{bot_mention}",
         "deactivate_chat": f"/deactivate_chat{bot_mention}",
         "debug_chat_id": f"/debug_chat_id{bot_mention}",
-        "debug_open_pings": f"/debug_open_pings{bot_mention}",
-        "update_members": f"/update_members{bot_mention}"
+        "debug_open_pings": f"/debug_open_pings{bot_mention}"
     }
 
 async def check_admin_rights(message: Message) -> bool:
@@ -348,7 +310,7 @@ async def cmd_name(message: Message, state: FSMContext) -> None:
             await db.bulk_add_chat_members(chat_id, members_data)
             await message.reply(f"✅ Добавлено {len(members_data)} участников в базу данных")
         else:
-            await message.reply("⚠️ Добавлены только администраторы чата. Остальные участники будут добавлены при их первом сообщении.")
+            await message.reply("⚠️ Добавлены только администраторы чата. Остальные участники будут добавлены автоматически при их первом сообщении или при входе в чат.")
     except Exception as e:
         await message.reply(f"⚠️ Ошибка при сборе участников: {e}")
     
@@ -514,6 +476,11 @@ async def cmd_help(message: Message) -> None:
 • Закрывает пинг при любом сообщении или реакции
 • Показывает статистику по времени ответа
 • Работает только в активированных чатах
+
+**💡 Как работают пинги:**
+• При упоминании @username создается временный пользователь
+• Когда пользователь напишет сообщение, временный профиль обновляется реальными данными
+• Пинги работают сразу для всех упомянутых пользователей
 """
     else:
         # Проверяем, активирован ли чат
@@ -541,7 +508,6 @@ async def cmd_help(message: Message) -> None:
 **Отладочные команды:**
 • {commands['debug_chat_id']} - Показать ID текущего чата
 • {commands['debug_open_pings']} - Показать все открытые пинги
-• {commands['update_members']} - Обновить список участников чата
 
 **Как работает бот:**
 • Отслеживает пинги через @username или text_mention
@@ -549,12 +515,10 @@ async def cmd_help(message: Message) -> None:
 • Показывает статистику по времени ответа
 • Работает только в активированных чатах
 
-**💡 Для новых участников:**
-• При активации чата администраторы добавляются автоматически
-• Остальные участники добавляются при их первом сообщении
-• Новые участники добавляются автоматически при входе в чат
-• Бот приветствует новых участников и сообщает о добавлении в базу
-• Используйте /update_members для принудительного обновления списка
+**💡 Как работают пинги:**
+• При упоминании @username создается временный пользователь
+• Когда пользователь напишет сообщение, временный профиль обновляется реальными данными
+• Пинги работают сразу для всех упомянутых пользователей
 
 **Требования:**
 • Чат должен быть активирован
@@ -1100,6 +1064,16 @@ async def on_message(message: Message) -> None:
 
     # Регистрируем пользователя
     if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
+        # Проверяем, есть ли временный пользователь с таким username
+        if message.from_user.username:
+            await db.update_temp_user(
+                message.from_user.username,
+                message.from_user.id,
+                message.from_user.first_name,
+                message.from_user.last_name
+            )
+        
+        # Обычная регистрация/обновление
         await db.upsert_user(
             user_id=message.from_user.id,
             username=message.from_user.username,
@@ -1135,30 +1109,15 @@ async def on_message(message: Message) -> None:
                 username = mention_text.lstrip("@")
                 logging.info(f"Ищем пользователя: mention_text='{mention_text}', username='{username}'")
                 
-                # Сначала ищем в базе данных
+                # Ищем в базе данных
                 target_user_id = await db.resolve_username(username)
                 logging.info(f"Поиск в БД: username='{username}', resolved user_id={target_user_id}")
                 
-                # Если не нашли в БД, пробуем через Telegram API
+                # Если не нашли, создаем временного пользователя
                 if not target_user_id:
-                    logging.info(f"Пробуем получить через Telegram API: username='{username}'")
-                    target_user_id = await try_get_user_info(bot, username)
-                    logging.info(f"Telegram API результат: username='{username}', user_id={target_user_id}")
-                    
-                    # Если нашли через API, добавляем в БД
-                    if target_user_id:
-                        await db.upsert_user(
-                            user_id=target_user_id,
-                            username=username,
-                            first_name=None,
-                            last_name=None
-                        )
-                        logging.info(f"Добавили пользователя в БД: user_id={target_user_id}, username={username}")
-                
-                if not target_user_id:
-                    await message.reply(f"Не удалось найти пользователя @{username}. Попросите его написать любое сообщение в чат или используйте /update_members для обновления списка участников.")
-                    logging.warning(f"Не удалось найти user_id для @{username}")
-                    continue
+                    logging.info(f"Создаем временного пользователя для @{username}")
+                    target_user_id = await db.create_temp_user_by_username(username)
+                    logging.info(f"Создан временный пользователь: username='{username}', temp_user_id={target_user_id}")
             
             if target_user_id and target_user_id != message.from_user.id:
                 logging.info(f"Создаём пинг: {ent.type} для user_id={target_user_id}")
@@ -1207,126 +1166,7 @@ async def on_reply(message: Message) -> None:
             close_ts=int(message.date.timestamp()),
         )
 
-@router.message(F.left_chat_member)
-async def on_left_member(message: Message) -> None:
-    """Обработчик выхода участников из чата"""
-    # Проверяем, активирован ли чат
-    bot = message.bot
-    db: Database = getattr(bot, "db")
-    
-    is_activated = await db.is_chat_activated(message.chat.id)
-    if not is_activated:
-        return  # Игнорируем в неактивированных чатах
-    
-    # Если вышел бот, ничего не делаем
-    bot_id = getattr(bot, "bot_id", None)
-    if bot_id and message.left_chat_member.id == bot_id:
-        return
-    
-    # Логируем выход участника
-    left_member = message.left_chat_member
-    member_name = left_member.username or left_member.first_name or f"user_{left_member.id}"
-    logging.info(f"Участник {member_name} (ID: {left_member.id}) покинул чат {message.chat.id}")
 
-@router.message(F.new_chat_members)
-async def on_new_members(message: Message) -> None:
-    """Обработчик добавления новых участников"""
-    # Проверяем, активирован ли чат
-    bot = message.bot
-    db: Database = getattr(bot, "db")
-    
-    is_activated = await db.is_chat_activated(message.chat.id)
-    if not is_activated:
-        return  # Игнорируем в неактивированных чатах
-    
-    bot_id = getattr(bot, "bot_id", None)
-    
-    # Добавляем новых участников в базу
-    new_members_data = []
-    for new_member in message.new_chat_members:
-        # Пропускаем ботов
-        if new_member.is_bot:
-            continue
-            
-        # Если это сам бот, показываем приветствие
-        if bot_id and new_member.id == bot_id:
-            await message.reply(
-                "🤖 Привет! Я бот для отслеживания времени ответа на пинги.\n\n"
-                "📋 Для активации используйте:\n"
-                "/activate <код>\n\n"
-                "💡 Код можно получить у главного администратора."
-            )
-            continue
-            
-        new_members_data.append((
-            new_member.id,
-            new_member.username,
-            new_member.first_name,
-            new_member.last_name
-        ))
-    
-    if new_members_data:
-        await db.bulk_add_chat_members(message.chat.id, new_members_data)
-        logging.info(f"Добавлено {len(new_members_data)} новых участников в чат {message.chat.id}")
-        
-        # Показываем уведомление в чате
-        member_names = []
-        for user_id, username, first_name, last_name in new_members_data:
-            if username:
-                member_names.append(f"@{username}")
-            elif first_name:
-                member_names.append(first_name)
-            else:
-                member_names.append(f"user_{user_id}")
-        
-        if len(member_names) == 1:
-            await message.reply(f"👋 Привет, {member_names[0]}! Ты добавлен в базу данных бота. Теперь пинги будут работать для тебя.")
-        else:
-            members_text = ", ".join(member_names)
-            await message.reply(f"👋 Привет, {members_text}! Вы добавлены в базу данных бота. Теперь пинги будут работать для вас.")
-
-@router.message(Command("update_members"))
-async def cmd_update_members(message: Message) -> None:
-    """Обновляет список участников чата"""
-    # Проверяем, активирован ли чат
-    bot = message.bot
-    db: Database = getattr(bot, "db")
-    
-    is_activated = await db.is_chat_activated(message.chat.id)
-    if not is_activated:
-        await message.reply("❌ Этот чат не активирован. Используйте /activate код для активации.")
-        return
-    
-    if not await check_admin_rights(message):
-        await message.reply("❌ Только администраторы могут использовать команды бота.")
-        return
-    
-    await message.reply("🔄 Обновляю список участников чата...")
-    
-    try:
-        members_data = await get_chat_members(bot, message.chat.id)
-        if members_data:
-            # Получаем текущее количество пользователей в БД
-            async with db.pool.acquire() as conn:
-                current_count = await conn.fetchval("SELECT COUNT(*) FROM users")
-            
-            await db.bulk_add_chat_members(message.chat.id, members_data)
-            
-            # Получаем новое количество
-            async with db.pool.acquire() as conn:
-                new_count = await conn.fetchval("SELECT COUNT(*) FROM users")
-            
-            added_count = new_count - current_count
-            await message.reply(
-                f"✅ Обновление завершено!\n"
-                f"📊 Всего участников в чате: {len(members_data)}\n"
-                f"📈 Добавлено новых: {added_count}\n"
-                f"💡 Теперь пинги будут работать для всех участников"
-            )
-        else:
-            await message.reply("⚠️ Добавлены только администраторы чата. Остальные участники будут добавлены при их первом сообщении.")
-    except Exception as e:
-        await message.reply(f"❌ Ошибка при обновлении участников: {e}")
 
 
 

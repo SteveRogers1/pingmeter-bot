@@ -2,6 +2,7 @@ import os
 import asyncpg
 from datetime import datetime
 from typing import Optional, List, Tuple
+import logging
 
 class Database:
     def __init__(self, dsn: Optional[str] = None):
@@ -387,28 +388,58 @@ class Database:
         if self.pool is not None:
             await self.pool.close()
 
-    async def bulk_add_chat_members(self, chat_id: int, members_data: List[Tuple[int, str, str, str]]):
-        """Массово добавляет участников чата в базу данных"""
-        if not members_data:
-            return
-        
+
+
+    async def create_temp_user_by_username(self, username: str) -> int:
+        """Создает временного пользователя по username для пингов"""
         now = int(datetime.utcnow().timestamp())
+        # Генерируем временный user_id (отрицательный, чтобы не конфликтовать с реальными)
+        temp_user_id = -hash(username) % (2**31)  # Ограничиваем размер
+        
         async with self.pool.acquire() as conn:
-            # Подготавливаем данные для batch insert
-            values = []
-            for user_id, username, first_name, last_name in members_data:
-                values.append(f"({user_id}, '{username or ''}', '{first_name or ''}', '{last_name or ''}', {now})")
-            
-            if values:
-                query = f"""
+            await conn.execute(
+                """
                 INSERT INTO users(user_id, username, first_name, last_name, last_seen_ts)
-                VALUES {','.join(values)}
+                VALUES($1, $2, $3, $4, $5)
                 ON CONFLICT (user_id) DO UPDATE SET
                     username=EXCLUDED.username,
-                    first_name=EXCLUDED.first_name,
-                    last_name=EXCLUDED.last_name,
                     last_seen_ts=EXCLUDED.last_seen_ts
-                """
-                await conn.execute(query)
+                """,
+                temp_user_id, username, None, None, now
+            )
+        return temp_user_id
+
+    async def update_temp_user(self, username: str, real_user_id: int, first_name: str = None, last_name: str = None):
+        """Обновляет временного пользователя реальными данными"""
+        now = int(datetime.utcnow().timestamp())
+        async with self.pool.acquire() as conn:
+            # Находим временного пользователя по username
+            temp_user = await conn.fetchrow(
+                "SELECT user_id FROM users WHERE username = $1 AND user_id < 0",
+                username
+            )
+            
+            if temp_user:
+                # Обновляем временного пользователя реальными данными
+                await conn.execute(
+                    """
+                    UPDATE users 
+                    SET user_id = $1, first_name = $2, last_name = $3, last_seen_ts = $4
+                    WHERE user_id = $5
+                    """,
+                    real_user_id, first_name, last_name, now, temp_user['user_id']
+                )
+                
+                # Обновляем все пинги с временным user_id на реальный
+                await conn.execute(
+                    """
+                    UPDATE pings 
+                    SET target_user_id = $1 
+                    WHERE target_user_id = $2
+                    """,
+                    real_user_id, temp_user['user_id']
+                )
+                
+                logging.info(f"Обновлен временный пользователь @{username}: {temp_user['user_id']} -> {real_user_id}")
 
 
