@@ -2,17 +2,31 @@ import os
 import logging
 import secrets
 import string
+import re
+import time
 from datetime import datetime, timedelta
+from typing import Optional, Dict, Set
+from functools import lru_cache
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramBadRequest
 
 
 from app.db import Database
 
 router = Router()
+
+# Кэш для rate limiting
+_rate_limit_cache: Dict[int, float] = {}
+_rate_limit_window = 1.0  # секунды между запросами
+
+# Кэш для проверки прав администратора
+_admin_cache: Dict[int, Dict[int, float]] = {}  # chat_id -> {user_id: timestamp}
+_admin_cache_ttl = 300  # 5 минут
 
 # Состояния для FSM
 class ChatActivation(StatesGroup):
@@ -35,19 +49,21 @@ def format_duration(seconds: int) -> str:
         hours = (seconds % 86400) // 3600
         return f"{days}д {hours}ч"
 
-def escape_username(username: str, user_id: int) -> str:
+def escape_username(username: Optional[str], user_id: int) -> str:
     """Экранирует специальные символы в username для Markdown"""
-    if username is None:
+    if not username:
         return f'user_{user_id}'
-    return username.replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+    # Экранируем специальные символы Markdown
+    escaped = re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', username)
+    return escaped
 
-def format_user_display(username: str, user_id: int) -> str:
+def format_user_display(username: Optional[str], user_id: int) -> str:
     """Форматирует отображение пользователя с правильным префиксом @"""
-    if username is None:
+    if not username:
         return f'user_{user_id}'  # Без @ для user_id
     return f'@{escape_username(username, user_id)}'  # С @ для username
 
-def create_message_link(chat_id: int, chat_username: str, message_id: int) -> str:
+def create_message_link(chat_id: int, chat_username: Optional[str], message_id: int) -> str:
     """Создает ссылку на сообщение для публичных и приватных чатов"""
     if chat_username:
         return f"https://t.me/{chat_username}/{message_id}"
@@ -64,26 +80,100 @@ def generate_activation_code() -> str:
     """Генерирует одноразовый код активации"""
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
+def rate_limit(user_id: int) -> bool:
+    """Rate limiting для пользователей"""
+    now = time.time()
+    if user_id in _rate_limit_cache:
+        if now - _rate_limit_cache[user_id] < _rate_limit_window:
+            return False
+    _rate_limit_cache[user_id] = now
+    return True
 
+def clean_rate_limit_cache():
+    """Очистка устаревших записей в кэше rate limiting"""
+    now = time.time()
+    expired = [user_id for user_id, timestamp in _rate_limit_cache.items() 
+               if now - timestamp > _rate_limit_window * 2]
+    for user_id in expired:
+        del _rate_limit_cache[user_id]
 
+def clean_admin_cache():
+    """Очистка устаревших записей в кэше администраторов"""
+    now = time.time()
+    for chat_id in list(_admin_cache.keys()):
+        expired_users = [user_id for user_id, timestamp in _admin_cache[chat_id].items() 
+                        if now - timestamp > _admin_cache_ttl]
+        for user_id in expired_users:
+            del _admin_cache[chat_id][user_id]
+        if not _admin_cache[chat_id]:
+            del _admin_cache[chat_id]
 
-
-def is_main_admin(user_id: int) -> bool:
-    """Проверяет, является ли пользователь главным администратором"""
-    main_admin_id = os.getenv("MAIN_ADMIN_ID")
-    if not main_admin_id:
+def validate_username(username: str) -> bool:
+    """Валидация username"""
+    if not username:
         return False
-    return user_id == int(main_admin_id)
+    # Telegram username format: 5-32 characters, letters, digits, underscores
+    pattern = r'^[a-zA-Z0-9_]{5,32}$'
+    return bool(re.match(pattern, username))
 
-def get_bot_commands(bot_username: str = "pingmeter_bot") -> dict:
-    """Возвращает полные команды с username бота"""
+def validate_chat_name(chat_name: str) -> bool:
+    """Валидация названия чата"""
+    if not chat_name or len(chat_name) < 2 or len(chat_name) > 50:
+        return False
+    # Проверяем на недопустимые символы
+    invalid_chars = ['<', '>', '&', '"', "'", '\\', '/']
+    return not any(char in chat_name for char in invalid_chars)
+
+@lru_cache(maxsize=1000)
+def escape_username(username: Optional[str], user_id: int) -> str:
+    """Экранирует username для Markdown с кэшированием"""
+    if not username:
+        return f"user_{user_id}"
+    
+    # Экранируем специальные символы Markdown
+    escaped = re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', username)
+    return escaped
+
+def format_user_display(username: Optional[str], user_id: int) -> str:
+    """Форматирует отображение пользователя"""
+    if not username:
+        return f"user_{user_id}"
+    return f"@{username}"
+
+def format_duration(seconds: int) -> str:
+    """Форматирует длительность в читаемый вид"""
+    if seconds < 60:
+        return f"{seconds}с"
+    elif seconds < 3600:
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}м {secs}с"
+    elif seconds < 86400:
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        return f"{hours}ч {minutes}м"
+    else:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        return f"{days}д {hours}ч"
+
+def create_message_link(chat_id: int, chat_username: Optional[str], message_id: int) -> str:
+    """Создает ссылку на сообщение"""
+    if chat_username:
+        return f"https://t.me/{chat_username}/{message_id}"
+    else:
+        # Для приватных чатов используем специальный формат
+        return f"https://t.me/c/{str(chat_id)[4:]}/{message_id}"
+
+@lru_cache(maxsize=100)
+def get_bot_commands(bot_username: str = "pingmeter_bot") -> Dict[str, str]:
+    """Возвращает полные команды с username бота с кэшированием"""
     bot_mention = f"@{bot_username}"
     return {
         "start": f"/start{bot_mention}",
         "generate_code": f"/generate_code{bot_mention}",
         "activate": f"/activate{bot_mention}",
         "name": f"/name{bot_mention}",
-
         "top_fast": f"/top_fast{bot_mention}",
         "top_slow": f"/top_slow{bot_mention}",
         "me": f"/me{bot_mention}",
@@ -97,11 +187,32 @@ def get_bot_commands(bot_username: str = "pingmeter_bot") -> dict:
     }
 
 async def check_admin_rights(message: Message) -> bool:
-    """Проверяет права администратора в чате"""
+    """Проверяет права администратора с кэшированием"""
+    if not message.from_user:
+        return False
+    
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    # Проверяем кэш
+    now = time.time()
+    if chat_id in _admin_cache and user_id in _admin_cache[chat_id]:
+        if now - _admin_cache[chat_id][user_id] < _admin_cache_ttl:
+            return True
+    
     try:
-        chat_member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
-        return chat_member.status in ["creator", "administrator"]
-    except Exception:
+        # Получаем информацию о чате
+        chat_member = await message.bot.get_chat_member(chat_id, user_id)
+        is_admin = chat_member.status in ['creator', 'administrator']
+        
+        # Кэшируем результат
+        if chat_id not in _admin_cache:
+            _admin_cache[chat_id] = {}
+        _admin_cache[chat_id][user_id] = now
+        
+        return is_admin
+    except Exception as e:
+        logging.warning(f"Ошибка проверки прав администратора: {e}")
         return False
 
 
@@ -282,8 +393,8 @@ async def cmd_name(message: Message, state: FSMContext) -> None:
         return
     
     chat_name = args[1].strip()
-    if len(chat_name) < 2 or len(chat_name) > 50:
-        await message.reply("❌ Название чата должно быть от 2 до 50 символов.")
+    if not validate_chat_name(chat_name):
+        await message.reply("❌ Название чата должно быть от 2 до 50 символов и не содержать недопустимые символы.")
         return
     
     data = await state.get_data()
@@ -414,7 +525,13 @@ async def cmd_deactivate_chat(message: Message) -> None:
     success = await db.deactivate_chat(chat_id)
     
     if success:
-        await message.reply(f"✅ Чат `{chat_id}` успешно деактивирован!")
+        await message.reply(
+            f"✅ Чат `{chat_id}` успешно деактивирован!\n\n"
+            f"🗑️ **Все данные чата очищены:**\n"
+            f"• Удалены все пинги\n"
+            f"• Удалены пользователи, участвовавшие только в этом чате\n"
+            f"• Удалена запись об активации"
+        )
     else:
         await message.reply(f"❌ Чат `{chat_id}` не найден или уже деактивирован.\n\n💡 Убедитесь, что используете правильный Chat ID из списка активированных чатов.")
 

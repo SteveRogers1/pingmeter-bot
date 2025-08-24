@@ -1,31 +1,57 @@
 import os
 import asyncpg
 from datetime import datetime
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 import logging
+import hashlib
+import time
+from functools import lru_cache
 
 class Database:
     def __init__(self, dsn: Optional[str] = None):
         self._dsn = dsn or os.getenv("DATABASE_URL")
-        print("DATABASE_URL:", self._dsn)  # DEBUG: print DSN for troubleshooting
         self.pool: Optional[asyncpg.Pool] = None
+        self._prepared_statements: Dict[str, str] = {}
+        
         if not self._dsn:
-            raise RuntimeError("DATABASE_URL not set")
+            raise RuntimeError("DATABASE_URL не установлен")
+        
+        # Валидация DSN
+        if not self._dsn.startswith(('postgresql://', 'postgres://')):
+            raise RuntimeError("Неверный формат DATABASE_URL")
 
     async def initialize(self):
+        """Инициализация базы данных с оптимизациями"""
         try:
-            print(f"🔌 Подключаемся к базе данных...")
+            logging.info("🔌 Подключение к базе данных...")
+            
+            # Оптимизированные настройки пула соединений
             self.pool = await asyncpg.create_pool(
                 self._dsn, 
-                min_size=1, 
-                max_size=5,
-                command_timeout=30,
-                server_settings={'application_name': 'pingmeter_bot'}
+                min_size=2,  # Увеличиваем минимальный размер пула
+                max_size=10,  # Увеличиваем максимальный размер пула
+                command_timeout=60,  # Увеличиваем таймаут
+                server_settings={
+                    'application_name': 'pingmeter_bot',
+                    'jit': 'off',  # Отключаем JIT для простых запросов
+                    'random_page_cost': '1.1',  # Оптимизация для SSD
+                    'effective_cache_size': '256MB'  # Размер кэша
+                }
             )
-            print(f"✅ Подключение к базе данных установлено")
+            
+            logging.info("✅ Подключение к базе данных установлено")
+            
+            # Создаем таблицы и индексы
+            await self._create_tables()
+            await self._create_indexes()
+            await self._prepare_statements()
+            
         except Exception as e:
-            print(f"❌ Ошибка подключения к базе данных: {e}")
+            logging.error(f"❌ Ошибка подключения к базе данных: {e}")
             raise
+
+    async def _create_tables(self):
+        """Создание таблиц с оптимизированной структурой"""
         async with self.pool.acquire() as conn:
             # Проверяем существующие таблицы
             existing_tables = await conn.fetch("""
@@ -42,7 +68,8 @@ class Database:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
-                    last_seen_ts BIGINT
+                    last_seen_ts BIGINT NOT NULL,
+                    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
                 );
                 """)
             
@@ -59,28 +86,13 @@ class Database:
                     close_ts BIGINT,
                     close_type TEXT,
                     close_message_id BIGINT,
-                    reaction_emoji TEXT
+                    reaction_emoji TEXT,
+                    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
                 );
                 """)
             else:
                 # Миграция существующей таблицы pings
-                columns = await conn.fetch("""
-                    SELECT column_name FROM information_schema.columns 
-                    WHERE table_name = 'pings' AND table_schema = 'public'
-                """)
-                column_names = [row['column_name'] for row in columns]
-                
-                # Если есть старая колонка closed_ts, переименовываем её
-                if 'closed_ts' in column_names and 'close_ts' not in column_names:
-                    await conn.execute("ALTER TABLE pings RENAME COLUMN closed_ts TO close_ts;")
-                
-                # Добавляем недостающие колонки если их нет
-                if 'close_type' not in column_names:
-                    await conn.execute("ALTER TABLE pings ADD COLUMN close_type TEXT;")
-                if 'close_message_id' not in column_names:
-                    await conn.execute("ALTER TABLE pings ADD COLUMN close_message_id BIGINT;")
-                if 'reaction_emoji' not in column_names:
-                    await conn.execute("ALTER TABLE pings ADD COLUMN reaction_emoji TEXT;")
+                await self._migrate_pings_table(conn)
             
             if 'activation_codes' not in existing_table_names:
                 await conn.execute("""
@@ -89,7 +101,9 @@ class Database:
                     code TEXT UNIQUE NOT NULL,
                     expires_at BIGINT NOT NULL,
                     created_by BIGINT NOT NULL,
-                    created_at BIGINT NOT NULL
+                    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+                    used_at BIGINT,
+                    used_by BIGINT
                 );
                 """)
             
@@ -100,38 +114,118 @@ class Database:
                     chat_id BIGINT UNIQUE NOT NULL,
                     chat_name TEXT NOT NULL,
                     activated_by BIGINT NOT NULL,
-                    activated_at BIGINT NOT NULL,
-                    activation_code TEXT NOT NULL
+                    activated_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+                    last_activity BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())
                 );
                 """)
-            
-            # Создаём индексы если их нет
+
+    async def _create_indexes(self):
+        """Создание оптимизированных индексов"""
+        async with self.pool.acquire() as conn:
+            # Индексы для таблицы users
             await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_pings_open ON pings(chat_id, target_user_id, close_ts);
-            CREATE INDEX IF NOT EXISTS idx_pings_time ON pings(chat_id, ping_ts);
-            CREATE INDEX IF NOT EXISTS idx_activation_codes_expires ON activation_codes(expires_at);
-            CREATE INDEX IF NOT EXISTS idx_activated_chats_chat_id ON activated_chats(chat_id);
+                CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_ts DESC);
             """)
             
-            # Миграция старых чатов из whitelist (если есть переменная ALLOWED_CHATS)
-            allowed_chats = os.getenv("ALLOWED_CHATS", "")
-            if allowed_chats:
-                allowed_ids = [int(x.strip()) for x in allowed_chats.split(",") if x.strip()]
-                for chat_id in allowed_ids:
-                    # Проверяем, не активирован ли уже чат
-                    existing = await conn.fetchrow(
-                        "SELECT chat_id FROM activated_chats WHERE chat_id = $1",
-                        chat_id
-                    )
-                    if not existing:
-                        # Активируем старый чат автоматически
-                        await conn.execute("""
-                        INSERT INTO activated_chats(chat_id, chat_name, activated_by, activated_at, activation_code)
-                        VALUES($1, $2, $3, $4, $5)
-                        ON CONFLICT (chat_id) DO NOTHING
-                        """,
-                        chat_id, f"Legacy Chat {chat_id}", 0, int(datetime.utcnow().timestamp()), "LEGACY_MIGRATION"
-                        )
+            # Индексы для таблицы pings
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pings_chat_target ON pings(chat_id, target_user_id);
+                CREATE INDEX IF NOT EXISTS idx_pings_target_open ON pings(target_user_id) WHERE close_ts IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_pings_chat_open ON pings(chat_id) WHERE close_ts IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_pings_ping_ts ON pings(ping_ts DESC);
+                CREATE INDEX IF NOT EXISTS idx_pings_close_ts ON pings(close_ts DESC) WHERE close_ts IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_pings_chat_ping_ts ON pings(chat_id, ping_ts DESC);
+            """)
+            
+            # Индексы для таблицы activation_codes
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_activation_codes_expires ON activation_codes(expires_at);
+                CREATE INDEX IF NOT EXISTS idx_activation_codes_used ON activation_codes(used_at) WHERE used_at IS NOT NULL;
+            """)
+            
+            # Индексы для таблицы activated_chats
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_activated_chats_last_activity ON activated_chats(last_activity DESC);
+            """)
+
+    async def _prepare_statements(self):
+        """Подготовка часто используемых запросов"""
+        async with self.pool.acquire() as conn:
+            # Подготавливаем часто используемые запросы
+            self._prepared_statements = {
+                'get_user': await conn.prepare("""
+                    SELECT user_id, username, first_name, last_name, last_seen_ts 
+                    FROM users WHERE user_id = $1
+                """),
+                'get_user_by_username': await conn.prepare("""
+                    SELECT user_id FROM users WHERE lower(username) = lower($1) 
+                    ORDER BY last_seen_ts DESC LIMIT 1
+                """),
+                'get_open_pings': await conn.prepare("""
+                    SELECT target_user_id, ping_ts, source_message_id 
+                    FROM pings 
+                    WHERE chat_id = $1 AND close_ts IS NULL 
+                    ORDER BY ping_ts ASC
+                """),
+                'is_chat_activated': await conn.prepare("""
+                    SELECT chat_id FROM activated_chats WHERE chat_id = $1
+                """),
+                'get_activation_code': await conn.prepare("""
+                    SELECT code, expires_at, created_by, created_at 
+                    FROM activation_codes 
+                    WHERE code = $1 AND expires_at > $2 AND used_at IS NULL
+                """)
+            }
+
+    async def _migrate_pings_table(self, conn):
+        """Миграция таблицы pings"""
+        columns = await conn.fetch("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'pings' AND table_schema = 'public'
+        """)
+        column_names = [row['column_name'] for row in columns]
+        
+        # Если есть старая колонка closed_ts, переименовываем её
+        if 'closed_ts' in column_names and 'close_ts' not in column_names:
+            await conn.execute("ALTER TABLE pings RENAME COLUMN closed_ts TO close_ts;")
+        
+        # Добавляем недостающие колонки если их нет
+        if 'close_type' not in column_names:
+            await conn.execute("ALTER TABLE pings ADD COLUMN close_type TEXT;")
+        if 'close_message_id' not in column_names:
+            await conn.execute("ALTER TABLE pings ADD COLUMN close_message_id BIGINT;")
+        if 'reaction_emoji' not in column_names:
+            await conn.execute("ALTER TABLE pings ADD COLUMN reaction_emoji TEXT;")
+        if 'created_at' not in column_names:
+            await conn.execute("ALTER TABLE pings ADD COLUMN created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW());")
+
+    @lru_cache(maxsize=1000)
+    def _hash_username(self, username: str) -> int:
+        """Хеширование username для временных пользователей"""
+        return int(hashlib.md5(username.encode()).hexdigest()[:8], 16) % (2**31)
+
+    async def create_temp_user_by_username(self, username: str) -> int:
+        """Создает временного пользователя по username для пингов"""
+        now = int(time.time())
+        # Генерируем временный user_id (отрицательный, чтобы не конфликтовать с реальными)
+        temp_user_id = -self._hash_username(username)
+        
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO users(user_id, username, first_name, last_name, last_seen_ts)
+                VALUES($1, $2, $3, $4, $5)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username=EXCLUDED.username,
+                    last_seen_ts=EXCLUDED.last_seen_ts
+                """,
+                temp_user_id, username, None, None, now
+            )
+        return temp_user_id
+
+
+
 
 
     async def upsert_user(self, user_id: int, username: Optional[str], first_name: Optional[str], last_name: Optional[str]):
@@ -379,41 +473,65 @@ class Database:
             return [(row['chat_id'], row['chat_name'], row['activated_by'], row['activated_at']) for row in rows]
 
     async def deactivate_chat(self, chat_id: int) -> bool:
-        """Деактивирует чат"""
+        """Деактивирует чат и очищает все связанные данные"""
         async with self.pool.acquire() as conn:
-            result = await conn.execute(
-                """
-                DELETE FROM activated_chats
-                WHERE chat_id = $1
-                """,
+            # Проверяем, существует ли чат
+            chat_exists = await conn.fetchrow(
+                "SELECT chat_id FROM activated_chats WHERE chat_id = $1",
                 chat_id
             )
-            return result != "DELETE 0"
+            
+            if not chat_exists:
+                return False
+            
+            # Начинаем транзакцию для атомарности операций
+            async with conn.transaction():
+                # 1. Удаляем все пинги этого чата
+                pings_deleted = await conn.execute(
+                    "DELETE FROM pings WHERE chat_id = $1",
+                    chat_id
+                )
+                print(f"🗑️ Удалено пингов для чата {chat_id}: {pings_deleted}")
+                
+                # 2. Находим пользователей, которые участвовали только в этом чате
+                users_to_delete = await conn.fetch(
+                    """
+                    SELECT DISTINCT u.user_id 
+                    FROM users u
+                    LEFT JOIN pings p ON u.user_id = p.source_user_id OR u.user_id = p.target_user_id
+                    WHERE u.user_id IN (
+                        SELECT DISTINCT source_user_id FROM pings WHERE chat_id = $1
+                        UNION
+                        SELECT DISTINCT target_user_id FROM pings WHERE chat_id = $1
+                    )
+                    AND p.id IS NULL
+                    """,
+                    chat_id
+                )
+                
+                # 3. Удаляем пользователей, которые больше не участвуют ни в каких пингах
+                if users_to_delete:
+                    user_ids = [row['user_id'] for row in users_to_delete]
+                    users_deleted = await conn.execute(
+                        "DELETE FROM users WHERE user_id = ANY($1)",
+                        user_ids
+                    )
+                    print(f"🗑️ Удалено пользователей для чата {chat_id}: {users_deleted}")
+                
+                # 4. Удаляем запись об активации чата
+                result = await conn.execute(
+                    "DELETE FROM activated_chats WHERE chat_id = $1",
+                    chat_id
+                )
+                
+                print(f"✅ Чат {chat_id} деактивирован и все данные очищены")
+                return result != "DELETE 0"
 
     async def close(self):
         if self.pool is not None:
             await self.pool.close()
 
 
-
-    async def create_temp_user_by_username(self, username: str) -> int:
-        """Создает временного пользователя по username для пингов"""
-        now = int(datetime.utcnow().timestamp())
-        # Генерируем временный user_id (отрицательный, чтобы не конфликтовать с реальными)
-        temp_user_id = -hash(username) % (2**31)  # Ограничиваем размер
-        
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO users(user_id, username, first_name, last_name, last_seen_ts)
-                VALUES($1, $2, $3, $4, $5)
-                ON CONFLICT (user_id) DO UPDATE SET
-                    username=EXCLUDED.username,
-                    last_seen_ts=EXCLUDED.last_seen_ts
-                """,
-                temp_user_id, username, None, None, now
-            )
-        return temp_user_id
 
     async def update_temp_user(self, username: str, real_user_id: int, first_name: str = None, last_name: str = None):
         """Обновляет временного пользователя реальными данными"""
