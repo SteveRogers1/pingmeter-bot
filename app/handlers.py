@@ -751,7 +751,12 @@ async def cmd_debug_open_pings(message: Message) -> None:
         
         # Получаем информацию о пользователе
         user_info = await db.get_user_info(user_id)
-        username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+        if user_info and user_info.get('username'):
+            username = user_info.get('username')
+        elif user_info and user_info.get('first_name'):
+            username = user_info.get('first_name')  # Используем first_name если нет username
+        else:
+            username = f'user_{user_id}'
         
         # Создаём ссылку на исходное сообщение
         if source_message_id:
@@ -813,7 +818,12 @@ async def cmd_top_fast(message: Message) -> None:
             elapsed_str = format_duration(elapsed)
             
             user_info = await db.get_user_info(user_id)
-            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            if user_info and user_info.get('username'):
+                username = user_info.get('username')
+            elif user_info and user_info.get('first_name'):
+                username = user_info.get('first_name')  # Используем first_name если нет username
+            else:
+                username = f'user_{user_id}'
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
@@ -1006,7 +1016,12 @@ async def on_top_fast(callback: CallbackQuery) -> None:
             elapsed_str = format_duration(elapsed)
             
             user_info = await db.get_user_info(user_id)
-            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            if user_info and user_info.get('username'):
+                username = user_info.get('username')
+            elif user_info and user_info.get('first_name'):
+                username = user_info.get('first_name')  # Используем first_name если нет username
+            else:
+                username = f'user_{user_id}'
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
@@ -1078,7 +1093,12 @@ async def on_top_slow(callback: CallbackQuery) -> None:
             elapsed_str = format_duration(elapsed)
             
             user_info = await db.get_user_info(user_id)
-            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            if user_info and user_info.get('username'):
+                username = user_info.get('username')
+            elif user_info and user_info.get('first_name'):
+                username = user_info.get('first_name')  # Используем first_name если нет username
+            else:
+                username = f'user_{user_id}'
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
