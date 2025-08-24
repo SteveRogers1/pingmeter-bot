@@ -798,15 +798,12 @@ async def cmd_top_fast(message: Message) -> None:
             else:
                 avg_str = "N/A"
             
-            # Экранируем специальные символы в username
-            escaped_username = escape_username(username, user_id)
-            
-            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+            result += f"{i}. <b>{format_user_display(username, user_id)}</b> - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
     if open_pings:
-        result += "\n⏰ **Открытые пинги:**\n"
+        result += "\n⏰ <b>Открытые пинги:</b>\n"
         for user_id, ping_ts, source_message_id in open_pings:
             if bot_id and user_id == bot_id:
                 continue  # Пропускаем бота
@@ -820,11 +817,11 @@ async def cmd_top_fast(message: Message) -> None:
             # Создаём ссылку на исходное сообщение
             if source_message_id:
                 message_link = create_message_link(message.chat.id, message.chat.username, source_message_id)
-                link_text = f"[вопрос]({message_link})"
+                link_text = f'<a href="{message_link}">вопрос</a>'
             else:
                 link_text = "ID неизвестен"
             
-            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
+            result += f"👤 <b>{format_user_display(username, user_id)}</b> - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -855,7 +852,7 @@ async def cmd_top_slow(message: Message) -> None:
     # Получаем топ медленных пользователей
     top_users = await db.get_top(message.chat.id, limit=10, order="DESC")
     
-    result = "🐌 **Топ 10 медленных ответов:**\n\n"
+    result = "🐌 <b>Топ 10 медленных ответов:</b>\n\n"
     
     if not top_users:
         result += "📊 Пока нет статистики в этом чате.\n\n"
@@ -869,15 +866,12 @@ async def cmd_top_slow(message: Message) -> None:
             else:
                 avg_str = "N/A"
             
-            # Экранируем специальные символы в username
-            escaped_username = escape_username(username, user_id)
-            
-            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+            result += f"{i}. <b>{format_user_display(username, user_id)}</b> - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(message.chat.id)
     if open_pings:
-        result += "\n⏰ **Открытые пинги:**\n"
+        result += "\n⏰ <b>Открытые пинги:</b>\n"
         for user_id, ping_ts, source_message_id in open_pings:
             if bot_id and user_id == bot_id:
                 continue  # Пропускаем бота
@@ -891,11 +885,11 @@ async def cmd_top_slow(message: Message) -> None:
             # Создаём ссылку на исходное сообщение
             if source_message_id:
                 message_link = create_message_link(message.chat.id, message.chat.username, source_message_id)
-                link_text = f"[вопрос]({message_link})"
+                link_text = f'<a href="{message_link}">вопрос</a>'
             else:
                 link_text = "ID неизвестен"
             
-            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
+            result += f"👤 <b>{format_user_display(username, user_id)}</b> - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
