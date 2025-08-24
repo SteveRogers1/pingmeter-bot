@@ -103,11 +103,7 @@ async def run() -> None:
             # Создаем бота с улучшенными настройками
             bot = Bot(
                 token=token, 
-                default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-                # Добавляем таймауты для безопасности
-                timeout=30,
-                # Ограничиваем количество запросов
-                rate_limit=30
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML)
             )
             
             # Привязываем базу данных к боту
@@ -131,7 +127,7 @@ async def run() -> None:
             
             # Запускаем бота с обработкой ошибок
             try:
-                await dp.start_polling(bot, polling_timeout=30)
+                await dp.start_polling(bot)
             except TelegramConflictError:
                 logging.error("Обнаружен конфликт с другим экземпляром бота")
                 raise
