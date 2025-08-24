@@ -192,47 +192,9 @@ class Database:
             )
             return ping_id
 
-    async def close_ping_by_reaction(self, chat_id: int, target_user_id: int, reacted_message_id: int, emoji: Optional[str], close_ts: int) -> Optional[int]:
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT id FROM pings
-                WHERE chat_id=$1 AND target_user_id=$2 AND source_message_id=$3 AND close_ts IS NULL
-                ORDER BY ping_ts ASC
-                LIMIT 1
-                """,
-                chat_id, target_user_id, reacted_message_id
-            )
-            if not row:
-                return None
-            ping_id = row["id"]
-            await conn.execute(
-                """
-                UPDATE pings SET close_ts=$1, close_type='reaction', reaction_emoji=$2 WHERE id=$3
-                """,
-                close_ts, emoji, ping_id
-            )
-            return ping_id
 
-    async def close_all_open_pings_by_message(self, chat_id: int, target_user_id: int, close_message_id: int, close_ts: int) -> int:
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id FROM pings
-                WHERE chat_id=$1 AND target_user_id=$2 AND close_ts IS NULL
-                """,
-                chat_id, target_user_id
-            )
-            ping_ids = [row["id"] for row in rows]
-            if not ping_ids:
-                return 0
-            await conn.executemany(
-                """
-                UPDATE pings SET close_ts=$1, close_type='message', close_message_id=$2 WHERE id=$3
-                """,
-                [(close_ts, close_message_id, pid) for pid in ping_ids]
-            )
-            return len(ping_ids)
+
+
 
     async def resolve_username(self, username: str) -> Optional[int]:
         async with self.pool.acquire() as conn:
@@ -323,22 +285,7 @@ class Database:
             )
             return [(r[0], r[1], r[2] if r[2] is not None else None) for r in rows]
 
-    async def close_oldest_open_ping_by_reaction(self, chat_id: int, target_user_id: int, close_message_id: int, close_ts: int):
-        """Закрыть самый старый открытый пинг по реакции"""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE pings
-                SET close_ts = $3, close_message_id = $4
-                WHERE id = (
-                    SELECT id FROM pings
-                    WHERE chat_id = $1 AND target_user_id = $2 AND close_ts IS NULL
-                    ORDER BY ping_ts ASC
-                    LIMIT 1
-                )
-                """,
-                chat_id, target_user_id, close_ts, close_message_id
-            )
+
 
     async def save_activation_code(self, code: str, expires_at: int, created_by: int):
         """Сохраняет код активации"""

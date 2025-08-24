@@ -15,7 +15,6 @@ router = Router()
 
 # Состояния для FSM
 class ChatActivation(StatesGroup):
-    waiting_for_code = State()
     waiting_for_chat_name = State()
 
 def format_duration(seconds: int) -> str:
@@ -100,13 +99,7 @@ async def check_admin_rights(message: Message) -> bool:
     except Exception:
         return False
 
-async def check_bot_admin_rights(message: Message) -> bool:
-    """Проверяет, является ли бот администратором чата"""
-    try:
-        bot_member = await message.bot.get_chat_member(message.chat.id, message.bot.id)
-        return bot_member.status in ["creator", "administrator"]
-    except Exception:
-        return False
+
 
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
@@ -1057,10 +1050,14 @@ async def on_message(message: Message) -> None:
     for ent in entities:
         logging.info(f"Проверяем entity: type={ent.type}, user={ent.user.id if ent.user else None}")
         logging.info(f"Проверяем условия: ent.type='{ent.type}', ent.user={ent.user}, bot_id={bot_id}")
-        if (
-            (ent.type == "text_mention" and ent.user and not ent.user.is_bot)
-            or (ent.type == "mention")
-        ) and (not bot_id or (ent.user and ent.user.id != bot_id)):
+        # Проверяем условия для создания пинга
+        is_text_mention = ent.type == "text_mention" and ent.user and not ent.user.is_bot
+        is_mention = ent.type == "mention"
+        is_not_bot = not bot_id or (ent.user and ent.user.id != bot_id) if ent.user else True
+        
+        logging.info(f"Условия: is_text_mention={is_text_mention}, is_mention={is_mention}, is_not_bot={is_not_bot}")
+        
+        if (is_text_mention or is_mention) and is_not_bot:
             logging.info(f"✅ Условия выполнены, обрабатываем entity типа '{ent.type}'")
             target_user_id = None
             
@@ -1126,26 +1123,6 @@ async def on_reply(message: Message) -> None:
             close_ts=int(message.date.timestamp()),
         )
 
-@router.message(F.reaction)
-async def on_reaction(message: Message) -> None:
-    """Обработчик реакций на сообщения"""
-    # Проверяем, активирован ли чат
-    bot = message.bot
-    db: Database = getattr(bot, "db")
-    
-    is_activated = await db.is_chat_activated(message.chat.id)
-    if not is_activated:
-        return  # Игнорируем сообщения в неактивированных чатах
-    
-    bot_id = getattr(bot, "bot_id", None)
-    
-    # Закрываем самый старый открытый пинг для этого автора
-    if message.from_user and not message.from_user.is_bot and (not bot_id or message.from_user.id != bot_id):
-        await db.close_oldest_open_ping_by_reaction(
-            chat_id=message.chat.id,
-            target_user_id=message.from_user.id,
-            close_message_id=message.message_id,
-            close_ts=int(message.date.timestamp()),
-        )
+
 
 
