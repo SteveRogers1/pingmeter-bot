@@ -434,6 +434,9 @@ async def cmd_deactivate_chat(message: Message) -> None:
     
     try:
         chat_id = int(args[1])
+        # Если пользователь ввел положительный ID, конвертируем в отрицательный
+        if chat_id > 0:
+            chat_id = -chat_id
     except ValueError:
         await message.reply("❌ Неверный формат Chat ID. Должно быть число.")
         return
@@ -447,7 +450,7 @@ async def cmd_deactivate_chat(message: Message) -> None:
     if success:
         await message.reply(f"✅ Чат `{chat_id}` успешно деактивирован!")
     else:
-        await message.reply(f"❌ Чат `{chat_id}` не найден или уже деактивирован.")
+        await message.reply(f"❌ Чат `{chat_id}` не найден или уже деактивирован.\n\n💡 Убедитесь, что используете правильный Chat ID из списка активированных чатов.")
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
