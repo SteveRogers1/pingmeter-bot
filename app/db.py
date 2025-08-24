@@ -387,4 +387,28 @@ class Database:
         if self.pool is not None:
             await self.pool.close()
 
+    async def bulk_add_chat_members(self, chat_id: int, members_data: List[Tuple[int, str, str, str]]):
+        """Массово добавляет участников чата в базу данных"""
+        if not members_data:
+            return
+        
+        now = int(datetime.utcnow().timestamp())
+        async with self.pool.acquire() as conn:
+            # Подготавливаем данные для batch insert
+            values = []
+            for user_id, username, first_name, last_name in members_data:
+                values.append(f"({user_id}, '{username or ''}', '{first_name or ''}', '{last_name or ''}', {now})")
+            
+            if values:
+                query = f"""
+                INSERT INTO users(user_id, username, first_name, last_name, last_seen_ts)
+                VALUES {','.join(values)}
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username=EXCLUDED.username,
+                    first_name=EXCLUDED.first_name,
+                    last_name=EXCLUDED.last_name,
+                    last_seen_ts=EXCLUDED.last_seen_ts
+                """
+                await conn.execute(query)
+
 
