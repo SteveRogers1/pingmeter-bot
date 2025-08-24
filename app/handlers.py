@@ -321,8 +321,8 @@ async def cmd_generate_code(message: Message) -> None:
         f"2. Сделайте бота администратором\n"
         f"3. Выполните команду: /activate {activation_code}\n"
         f"4. Укажите название чата\n\n"
-        f"⚠️ **Код одноразовый и действителен 24 часа!**",
-        parse_mode="Markdown"
+        f"⚠️ <b>Код одноразовый и действителен 24 часа!</b>",
+        parse_mode="HTML"
     )
 
 @router.message(Command("activate"))
@@ -491,7 +491,7 @@ async def cmd_list_activated(message: Message) -> None:
         result += f"  Активировал: {activated_by}\n"
         result += f"  Дата: {activated_date}\n\n"
     
-    await message.reply(result, parse_mode="Markdown")
+    await message.reply(result, parse_mode="HTML")
 
 @router.message(Command("deactivate_chat"))
 async def cmd_deactivate_chat(message: Message) -> None:
@@ -660,7 +660,7 @@ async def cmd_debug_chat_id(message: Message) -> None:
 Используйте команду /deactivate_chat {chat_id} в ЛС с ботом
 """
     
-    await message.reply(debug_info, parse_mode="Markdown")
+    await message.reply(debug_info, parse_mode="HTML")
 
 @router.message(Command("test"))
 async def cmd_test(message: Message) -> None:
@@ -769,9 +769,9 @@ async def cmd_debug_open_pings(message: Message) -> None:
         else:
             link_text = "ID неизвестен"
         
-        result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
+        result += f"👤 <b>{format_user_display(username, user_id)}</b> - {elapsed_str} ({link_text})\n"
     
-    await message.reply(result, parse_mode="Markdown", disable_web_page_preview=True)
+    await message.reply(result, parse_mode="HTML", disable_web_page_preview=True)
 
 @router.message(Command("top_fast"))
 async def cmd_top_fast(message: Message) -> None:
@@ -953,18 +953,18 @@ async def on_top_all(callback: CallbackQuery) -> None:
         # Экранируем специальные символы в username
         escaped_username = escape_username(username, user_id)
         
-        result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+        result += f"{i}. <b>{format_user_display(username, user_id)}</b> - {avg_str} (n={n})\n"
     
     # Разбиваем на части, если сообщение слишком длинное
     if len(result) > 4096:
         parts = [result[i:i+4096] for i in range(0, len(result), 4096)]
         for i, part in enumerate(parts):
             if i == 0:
-                await callback.message.edit_text(part, parse_mode="Markdown")
+                await callback.message.edit_text(part, parse_mode="HTML")
             else:
-                await callback.message.answer(part, parse_mode="Markdown")
+                await callback.message.answer(part, parse_mode="HTML")
     else:
-        await callback.message.edit_text(result, parse_mode="Markdown")
+        await callback.message.edit_text(result, parse_mode="HTML")
     
     await callback.answer()
 
@@ -989,7 +989,7 @@ async def on_top_fast(callback: CallbackQuery) -> None:
     # Получаем топ быстрых пользователей
     top_users = await db.get_top(callback.message.chat.id, limit=10, order="ASC")
     
-    result = "⚡ **Топ 10 быстрых ответов:**\n\n"
+    result = "⚡ <b>Топ 10 быстрых ответов:</b>\n\n"
     
     if not top_users:
         result += "📊 Пока нет статистики в этом чате.\n\n"
@@ -1006,12 +1006,12 @@ async def on_top_fast(callback: CallbackQuery) -> None:
             # Экранируем специальные символы в username
             escaped_username = escape_username(username, user_id)
             
-            result += f"{i}. **{format_user_display(username, user_id)}** - {avg_str} (n={n})\n"
+            result += f"{i}. <b>{format_user_display(username, user_id)}</b> - {avg_str} (n={n})\n"
     
     # Получаем открытые пинги
     open_pings = await db.get_open_pings(callback.message.chat.id)
     if open_pings:
-        result += "\n⏰ **Открытые пинги:**\n"
+        result += "\n⏰ <b>Открытые пинги:</b>\n"
         for user_id, ping_ts, source_message_id in open_pings:
             if bot_id and user_id == bot_id:
                 continue  # Пропускаем бота
@@ -1030,11 +1030,11 @@ async def on_top_fast(callback: CallbackQuery) -> None:
             # Создаём ссылку на исходное сообщение
             if source_message_id:
                 message_link = create_message_link(callback.message.chat.id, callback.message.chat.username, source_message_id)
-                link_text = f"[вопрос]({message_link})"
+                link_text = f'<a href="{message_link}">вопрос</a>'
             else:
                 link_text = "ID неизвестен"
 
-            result += f"👤 **{format_user_display(username, user_id)}** - {elapsed_str} ({link_text})\n"
+            result += f"👤 <b>{format_user_display(username, user_id)}</b> - {elapsed_str} ({link_text})\n"
     
     # Добавляем кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1042,7 +1042,7 @@ async def on_top_fast(callback: CallbackQuery) -> None:
         [InlineKeyboardButton(text="🐌 Топ медленных", callback_data="top_slow")]
     ])
     
-    await callback.message.edit_text(result, parse_mode="Markdown", reply_markup=keyboard)
+    await callback.message.edit_text(result, parse_mode="HTML", reply_markup=keyboard)
     await callback.answer()
 
 @router.callback_query(F.data == "top_slow")
@@ -1119,7 +1119,7 @@ async def on_top_slow(callback: CallbackQuery) -> None:
         [InlineKeyboardButton(text="⚡ Топ быстрых", callback_data="top_fast")]
     ])
     
-    await callback.message.edit_text(result, parse_mode="Markdown", reply_markup=keyboard)
+    await callback.message.edit_text(result, parse_mode="HTML", reply_markup=keyboard)
     await callback.answer()
 
 @router.message(Command("me"))
@@ -1161,14 +1161,14 @@ async def cmd_me(message: Message) -> None:
     escaped_username = escape_username(user_display_name, message.from_user.id)
     
     result = f"""
-📊 **Ваша статистика за 30 дней:**
+📊 <b>Ваша статистика за 30 дней:</b>
 
-👤 **Пользователь:** {format_user_display(user_display_name, message.from_user.id)}
-📈 **Количество пингов:** {n}
-⏱️ **Среднее время ответа:** {avg_str}
+👤 <b>Пользователь:</b> {format_user_display(user_display_name, message.from_user.id)}
+📈 <b>Количество пингов:</b> {n}
+⏱️ <b>Среднее время ответа:</b> {avg_str}
 """
     
-    await message.reply(result, parse_mode="Markdown")
+    await message.reply(result, parse_mode="HTML")
 
 
 
@@ -1239,18 +1239,11 @@ async def on_message(message: Message) -> None:
                 target_user_id = await db.resolve_username(username)
                 logging.info(f"Поиск в БД: username='{username}', resolved user_id={target_user_id}")
                 
-                # Если не нашли, создаем пользователя с реальным username
+                # Если не нашли, создаем временного пользователя
                 if not target_user_id:
-                    logging.info(f"Создаем пользователя для @{username}")
-                    # Создаем пользователя с реальным username
-                    await db.upsert_user(
-                        user_id=0,  # Временный ID, будет обновлен при первом сообщении
-                        username=username,
-                        first_name=username,
-                        last_name=None
-                    )
-                    target_user_id = await db.resolve_username(username)
-                    logging.info(f"Создан пользователь: username='{username}', user_id={target_user_id}")
+                    logging.info(f"Создаем временного пользователя для @{username}")
+                    target_user_id = await db.create_temp_user_by_username(username)
+                    logging.info(f"Создан временный пользователь: username='{username}', temp_user_id={target_user_id}")
             
             if target_user_id and target_user_id != message.from_user.id:
                 logging.info(f"Создаём пинг: {ent.type} для user_id={target_user_id}")
