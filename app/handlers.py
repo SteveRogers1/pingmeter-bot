@@ -58,11 +58,11 @@ def escape_username(username: Optional[str], user_id: int) -> str:
     return escaped
 
 def format_user_display(username: Optional[str], user_id: int) -> str:
-    """Форматирует отображение пользователя с правильным префиксом @"""
+    """Форматирует отображение пользователя с кликабельной ссылкой на профиль"""
     # Безопасная обработка username
     if not username or username == 'None' or username == '' or username is None:
-        return f'user_{user_id}'  # Без @ для user_id
-    return f'@{username}'  # С @ для username
+        return f'<a href="tg://user?id={user_id}">user_{user_id}</a>'  # Ссылка на профиль по user_id
+    return f'<a href="https://t.me/{username}">@{username}</a>'  # Ссылка на профиль по username
 
 def create_message_link(chat_id: int, chat_username: Optional[str], message_id: int) -> str:
     """Создает ссылку на сообщение для публичных и приватных чатов"""
@@ -881,7 +881,7 @@ async def cmd_top_slow(message: Message) -> None:
             elapsed_str = format_duration(elapsed)
             
             user_info = await db.get_user_info(user_id)
-            username = user_info.get('username', f'user_{user_id}') if user_info else f'user_{user_id}'
+            username = user_info.get('username') if user_info else None
             
             # Создаём ссылку на исходное сообщение
             if source_message_id:
